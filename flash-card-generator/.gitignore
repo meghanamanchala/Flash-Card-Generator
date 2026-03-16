@@ -1,0 +1,4 @@
+backend-django/.env
+backend-django/venv/
+backend-django/__pycache__/
+backend-django/db.sqlite3
