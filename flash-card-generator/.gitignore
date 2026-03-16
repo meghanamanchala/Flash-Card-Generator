@@ -2,3 +2,9 @@ backend-django/.env
 backend-django/venv/
 backend-django/__pycache__/
 backend-django/db.sqlite3
+__pycache__/
+*.pyc
+*.pyo
+db.sqlite3
+.env
+venv/
