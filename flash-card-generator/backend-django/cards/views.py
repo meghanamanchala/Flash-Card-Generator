@@ -2,6 +2,8 @@ import re
 
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -67,11 +69,13 @@ def split_into_flashcard_chunks(raw_content, max_words=80):
     return [chunk for chunk in chunks if len(chunk.split()) >= 5]
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class LearningUnitCreateView(generics.CreateAPIView):
     queryset = LearningUnit.objects.all()
     serializer_class = LearningUnitSerializer
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class GenerateFlashCardsView(APIView):
     def post(self, request, pk):
         learning_unit = get_object_or_404(LearningUnit, pk=pk)
