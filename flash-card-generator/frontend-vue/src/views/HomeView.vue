@@ -35,6 +35,9 @@ const cardCountLabel = computed(() => {
   return flashcards.value.length === 1 ? '1 flashcard ready' : `${flashcards.value.length} flashcards ready`
 })
 
+
+
+
 const wordCount = computed(() => {
   const content = rawContent.value.trim()
   return content ? content.split(/\s+/).length : 0
