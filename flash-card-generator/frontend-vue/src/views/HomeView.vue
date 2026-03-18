@@ -86,7 +86,7 @@ onMounted(() => {
       <div v-else-if="!isLoading" class="empty-state">
         <p class="empty-badge">No decks yet</p>
         <h3>Create your first saved set</h3>
-        <p>Use the star button above, enter a title, paste your content, and generate the cards.</p>
+        <p>Use the create deck button, enter a title, paste your content, and generate the cards.</p>
       </div>
 
       <div v-else class="empty-state loading">
