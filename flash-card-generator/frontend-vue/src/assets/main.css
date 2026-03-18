@@ -1,7 +1,7 @@
 @import './base.css';
 
 #app {
-  max-width: 1240px;
+  max-width: 1280px;
   margin: 0 auto;
   padding: 1.5rem;
   font-weight: normal;
@@ -10,14 +10,17 @@
 a,
 .green {
   text-decoration: none;
-  color: #b45309;
-  transition: 0.4s;
-  padding: 3px;
+  color: #5b45e0;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease,
+    transform 0.2s ease;
 }
 
 @media (hover: hover) {
   a:hover {
-    background-color: rgba(180, 83, 9, 0.12);
+    background-color: rgba(91, 69, 224, 0.12);
+    transform: translateY(-1px);
   }
 }
 
