@@ -74,8 +74,8 @@ async function createDeck() {
     <section class="editor-shell">
       <form class="editor-panel" @submit.prevent="createDeck">
         <div class="section-head">
-          <h2>New flashcard set</h2>
-          <p>The deck title, source content, and generated cards will be stored in the backend database.</p>
+          <h2>New deck</h2>
+          <p>Save the title, source text, and generated cards together for later review.</p>
         </div>
 
         <label class="field">
@@ -117,14 +117,22 @@ async function createDeck() {
 
       <aside class="side-panel">
         <div class="metric-card">
-          <span class="metric-label">Word count</span>
+          <div class="metric-head">
+            <span class="metric-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="presentation">
+                <path
+                  d="M7 6.75A1.75 1.75 0 0 1 8.75 5h6.5A1.75 1.75 0 0 1 17 6.75v10.5A1.75 1.75 0 0 1 15.25 19h-6.5A1.75 1.75 0 0 1 7 17.25Z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                />
+                <path d="M10 9h4M10 12h4M10 15h2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              </svg>
+            </span>
+            <span class="metric-label">Word count</span>
+          </div>
           <strong>{{ wordCount }}</strong>
           <p>{{ helperText }}</p>
-        </div>
-        <div class="metric-card accent">
-          <span class="metric-label">Stored data</span>
-          <strong>Title + source + cards</strong>
-          <p>Each generated deck is saved, so you can return from the dashboard later.</p>
         </div>
       </aside>
     </section>
@@ -134,14 +142,15 @@ async function createDeck() {
 <style scoped>
 .create-page {
   display: grid;
-  gap: 1.5rem;
+  gap: 1.6rem;
 }
 
+.create-hero,
 .editor-panel,
 .side-panel {
   border-radius: 28px;
   border: 1px solid var(--color-border);
-  box-shadow: 0 18px 50px rgba(120, 98, 77, 0.08);
+  box-shadow: var(--color-shadow);
 }
 
 .text-link {
@@ -153,6 +162,64 @@ async function createDeck() {
   font-weight: 600;
 }
 
+.create-hero {
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  background:
+    radial-gradient(circle at top right, rgba(51, 92, 255, 0.14), transparent 23%),
+    linear-gradient(135deg, #ffffff, #f6f9ff 55%, #eef4ff);
+}
+
+.hero-copy {
+  display: grid;
+  gap: 0.7rem;
+  max-width: 58ch;
+}
+
+.eyebrow {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-primary-dark);
+}
+
+.hero-copy h1 {
+  color: var(--color-heading);
+  font-size: clamp(2rem, 4vw, 3.2rem);
+  line-height: 1;
+}
+
+.hero-copy p {
+  color: var(--color-text-muted);
+  font-size: 1rem;
+}
+
+.hero-chip {
+  display: grid;
+  gap: 0.2rem;
+  align-self: end;
+  min-width: 210px;
+  padding: 1rem 1.1rem;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(51, 92, 255, 0.12);
+}
+
+.hero-chip-label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.hero-chip strong {
+  color: var(--color-heading);
+  font-size: 1.1rem;
+}
+
 .editor-shell {
   display: grid;
   gap: 1.5rem;
@@ -160,46 +227,49 @@ async function createDeck() {
 
 .editor-panel,
 .side-panel {
-  background: rgba(255, 250, 243, 0.78);
+  background: var(--color-surface);
 }
 
 .editor-panel {
-  padding: 1.4rem;
+  padding: 1.5rem;
 }
 
 .section-head {
-  margin-bottom: 1.2rem;
+  margin-bottom: 1.35rem;
 }
 
 .section-head h2 {
   margin-bottom: 0.35rem;
   color: var(--color-heading);
+  font-size: clamp(1.9rem, 3vw, 2.5rem);
+  line-height: 1.05;
 }
 
 .section-head p {
   color: var(--color-text-muted);
+  max-width: 58ch;
 }
 
 .field {
   display: grid;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
+  gap: 0.6rem;
+  margin-bottom: 1.15rem;
 }
 
 .field span {
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-heading);
 }
 
 .field input,
 .field textarea {
   width: 100%;
-  border: 1px solid rgba(63, 63, 70, 0.12);
-  border-radius: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 20px;
   padding: 1rem 1.05rem;
-  background: rgba(255, 255, 255, 0.9);
-  font: inherit;
+  background: rgba(255, 255, 255, 0.98);
   color: var(--color-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .field textarea {
@@ -210,8 +280,8 @@ async function createDeck() {
 .field input:focus,
 .field textarea:focus {
   outline: none;
-  border-color: rgba(79, 70, 229, 0.45);
-  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.12);
+  border-color: rgba(51, 92, 255, 0.45);
+  box-shadow: 0 0 0 4px rgba(51, 92, 255, 0.12);
 }
 
 .field input[type='range'] {
@@ -224,6 +294,7 @@ async function createDeck() {
   justify-content: space-between;
   gap: 1rem;
   color: var(--color-text-muted);
+  font-size: 0.95rem;
 }
 
 .range-meta strong {
@@ -245,14 +316,36 @@ async function createDeck() {
 }
 
 .metric-card {
-  padding: 1rem;
+  padding: 1.1rem;
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(17, 24, 39, 0.08);
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
 }
 
 .metric-card.accent {
-  background: linear-gradient(135deg, rgba(236, 243, 255, 0.98), rgba(216, 239, 247, 0.82));
+  background: linear-gradient(180deg, #f3f9ff, #e2f2ff);
+}
+
+.metric-head {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.metric-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 12px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary-dark);
+}
+
+.metric-icon svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 .metric-label {
@@ -260,21 +353,27 @@ async function createDeck() {
   text-transform: uppercase;
   letter-spacing: 0.14em;
   font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .metric-card strong {
   display: block;
-  margin: 0.3rem 0 0.35rem;
+  margin: 0.7rem 0 0.35rem;
   color: var(--color-heading);
-  font-size: 1.3rem;
+  font-size: 1.45rem;
+  line-height: 1.15;
+}
+
+.metric-card p {
+  color: var(--color-text-muted);
 }
 
 .primary-button {
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 999px;
-  padding: 0.9rem 1.25rem;
+  padding: 0.95rem 1.3rem;
   cursor: pointer;
-  font: inherit;
+  font-weight: 700;
   transition:
     transform 0.2s ease,
     box-shadow 0.2s ease,
@@ -282,13 +381,14 @@ async function createDeck() {
 }
 
 .primary-button {
-  background: linear-gradient(135deg, #7dd3fc, #4f46e5);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
   color: #eef2ff;
-  box-shadow: 0 16px 34px rgba(79, 70, 229, 0.24);
+  box-shadow: 0 16px 34px rgba(51, 92, 255, 0.24);
 }
 
 .primary-button:hover {
   transform: translateY(-1px);
+  box-shadow: 0 20px 36px rgba(51, 92, 255, 0.28);
 }
 
 .primary-button:disabled {
@@ -306,6 +406,11 @@ async function createDeck() {
 }
 
 @media (min-width: 920px) {
+  .create-hero {
+    grid-template-columns: minmax(0, 1.25fr) auto;
+    align-items: end;
+  }
+
   .editor-shell {
     grid-template-columns: minmax(0, 1.3fr) minmax(290px, 0.7fr);
     align-items: start;

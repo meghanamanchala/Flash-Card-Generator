@@ -147,7 +147,7 @@ onMounted(() => {
 <style scoped>
 .deck-page {
   display: grid;
-  gap: 1.5rem;
+  gap: 1.6rem;
 }
 
 .deck-header,
@@ -156,7 +156,7 @@ onMounted(() => {
 .empty-state {
   border-radius: 28px;
   border: 1px solid var(--color-border);
-  box-shadow: 0 18px 50px rgba(120, 98, 77, 0.08);
+  box-shadow: var(--color-shadow);
 }
 
 .deck-header {
@@ -166,9 +166,9 @@ onMounted(() => {
   gap: 1rem;
   padding: 1.5rem;
   background:
-    radial-gradient(circle at 80% 20%, rgba(100, 181, 255, 0.28), transparent 20%),
-    linear-gradient(135deg, #1b2753 0%, #1c3357 52%, #1f4d68 100%);
-  color: #fff9ef;
+    radial-gradient(circle at 80% 20%, rgba(125, 211, 252, 0.22), transparent 20%),
+    linear-gradient(135deg, #0f172a 0%, #102a53 52%, #133b75 100%);
+  color: #f8fbff;
 }
 
 .eyebrow,
@@ -187,7 +187,7 @@ onMounted(() => {
 }
 
 .deck-subtitle {
-  color: rgba(255, 249, 239, 0.76);
+  color: rgba(248, 251, 255, 0.78);
 }
 
 .header-actions {
@@ -206,15 +206,16 @@ onMounted(() => {
 }
 
 .primary-link {
-  background: linear-gradient(135deg, #7dd3fc, #4f46e5);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
   color: #eef2ff;
+  box-shadow: 0 16px 34px rgba(51, 92, 255, 0.24);
 }
 
 .ghost-link,
 .ghost-button {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff9ef;
-  border: 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fbff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   cursor: pointer;
 }
 
@@ -227,7 +228,7 @@ onMounted(() => {
 .review-panel,
 .empty-state {
   padding: 1.35rem;
-  background: rgba(255, 250, 243, 0.78);
+  background: var(--color-surface);
 }
 
 .deck-sidebar {
@@ -239,8 +240,8 @@ onMounted(() => {
 .sidebar-card {
   padding: 1rem;
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(17, 24, 39, 0.08);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(15, 23, 42, 0.08);
 }
 
 .sidebar-card strong {
@@ -270,9 +271,9 @@ onMounted(() => {
   padding: 1.35rem;
   border-radius: 26px;
   background:
-    radial-gradient(circle at top right, rgba(125, 211, 252, 0.24), transparent 20%),
-    linear-gradient(165deg, #fcfdff, #edf4ff);
-  border: 1px solid rgba(79, 70, 229, 0.2);
+    radial-gradient(circle at top right, rgba(51, 92, 255, 0.14), transparent 22%),
+    linear-gradient(165deg, #ffffff, #eef4ff);
+  border: 1px solid rgba(51, 92, 255, 0.16);
 }
 
 .hero-card-meta {
@@ -281,13 +282,13 @@ onMounted(() => {
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1rem;
-  color: #4338ca;
+  color: var(--color-primary-dark);
 }
 
 .hero-card p {
   font-size: clamp(1.1rem, 2.3vw, 1.5rem);
   line-height: 1.45;
-  color: #2f2417;
+  color: var(--color-text);
 }
 
 .review-controls {
@@ -305,18 +306,18 @@ onMounted(() => {
 .strip-card {
   width: 100%;
   text-align: left;
-  border: 1px solid rgba(17, 24, 39, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 20px;
   padding: 0.95rem 1rem;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.74);
+  background: rgba(255, 255, 255, 0.94);
   font: inherit;
 }
 
 .strip-card span {
   display: block;
   margin-bottom: 0.3rem;
-  color: #4338ca;
+  color: var(--color-primary-dark);
 }
 
 .strip-card p {
@@ -328,9 +329,9 @@ onMounted(() => {
 }
 
 .strip-card.active {
-  border-color: rgba(79, 70, 229, 0.35);
-  background: linear-gradient(135deg, rgba(239, 244, 255, 0.98), rgba(227, 239, 255, 0.88));
-  box-shadow: 0 12px 24px rgba(79, 70, 229, 0.08);
+  border-color: rgba(51, 92, 255, 0.28);
+  background: linear-gradient(135deg, rgba(240, 245, 255, 1), rgba(229, 238, 255, 0.94));
+  box-shadow: 0 12px 24px rgba(51, 92, 255, 0.1);
 }
 
 .empty-state {
@@ -338,6 +339,9 @@ onMounted(() => {
   display: grid;
   place-items: center;
   text-align: center;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.92)),
+    var(--color-panel);
 }
 
 .error-banner {

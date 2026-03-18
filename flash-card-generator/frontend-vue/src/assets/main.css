@@ -1,31 +1,33 @@
 @import './base.css';
 
 #app {
-  max-width: 1280px;
+  max-width: 1320px;
   margin: 0 auto;
-  padding: 1.5rem;
+  padding: 1.25rem;
   font-weight: normal;
 }
 
 a,
 .green {
   text-decoration: none;
-  color: #5b45e0;
+  color: var(--color-primary-dark);
   transition:
     color 0.2s ease,
     background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
     transform 0.2s ease;
 }
 
 @media (hover: hover) {
   a:hover {
-    background-color: rgba(91, 69, 224, 0.12);
+    background-color: rgba(51, 92, 255, 0.08);
     transform: translateY(-1px);
   }
 }
 
 @media (min-width: 768px) {
   #app {
-    padding: 2rem;
+    padding: 2rem 2.25rem;
   }
 }
