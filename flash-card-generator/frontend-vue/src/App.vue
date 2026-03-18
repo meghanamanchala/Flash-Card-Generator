@@ -1,5 +1,17 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
+import { computed } from 'vue'
+import { RouterLink, RouterView, useRouter } from 'vue-router'
+
+import { currentUser, isAuthenticated, logout } from './services/auth'
+
+const router = useRouter()
+
+const username = computed(() => currentUser.value?.username ?? '')
+
+async function signOut() {
+  await logout()
+  await router.push({ name: 'auth' })
+}
 </script>
 
 <template>
@@ -14,9 +26,15 @@ import { RouterLink, RouterView } from 'vue-router'
       </RouterLink>
 
       <nav class="nav-links" aria-label="Main navigation">
-        <RouterLink class="nav-link" to="/">Dashboard</RouterLink>
-        <RouterLink class="nav-link" to="/create">Create Deck</RouterLink>
+        <RouterLink v-if="isAuthenticated" class="nav-link" to="/">Dashboard</RouterLink>
+        <RouterLink v-if="isAuthenticated" class="nav-link" to="/create">Create Deck</RouterLink>
+        <RouterLink v-if="!isAuthenticated" class="nav-link" to="/auth">Login</RouterLink>
       </nav>
+
+      <div v-if="isAuthenticated" class="nav-account">
+        <span class="user-chip">{{ username }}</span>
+        <button class="logout-button" type="button" @click="signOut">Logout</button>
+      </div>
     </header>
 
     <RouterView />
@@ -82,6 +100,13 @@ import { RouterLink, RouterView } from 'vue-router'
   flex-wrap: wrap;
 }
 
+.nav-account {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
 .nav-link {
   padding: 0.72rem 1rem;
   border-radius: 999px;
@@ -95,6 +120,27 @@ import { RouterLink, RouterView } from 'vue-router'
   color: #312e81;
 }
 
+.user-chip,
+.logout-button {
+  border-radius: 999px;
+  font: inherit;
+}
+
+.user-chip {
+  padding: 0.72rem 1rem;
+  background: rgba(79, 70, 229, 0.08);
+  color: var(--color-heading);
+  font-weight: 600;
+}
+
+.logout-button {
+  border: 0;
+  padding: 0.72rem 1rem;
+  cursor: pointer;
+  background: rgba(17, 24, 39, 0.06);
+  color: var(--color-heading);
+}
+
 @media (max-width: 640px) {
   .app-navbar {
     align-items: start;
@@ -102,6 +148,10 @@ import { RouterLink, RouterView } from 'vue-router'
   }
 
   .nav-links {
+    width: 100%;
+  }
+
+  .nav-account {
     width: 100%;
   }
 }

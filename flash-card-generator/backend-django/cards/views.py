@@ -1,15 +1,22 @@
 import re
 
+from django.contrib.auth import logout
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
-from rest_framework import generics, status
+from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import FlashCard, LearningUnit
-from .serializers import FlashCardSerializer, LearningUnitSerializer
+from .models import AuthToken, FlashCard, LearningUnit
+from .serializers import (
+    FlashCardSerializer,
+    LearningUnitSerializer,
+    LoginSerializer,
+    RegisterSerializer,
+    UserSerializer,
+)
 
 
 def split_into_flashcard_chunks(raw_content, max_words=80):
@@ -87,19 +94,30 @@ def merge_chunks_to_limit(chunks, limit):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class LearningUnitListCreateView(generics.ListCreateAPIView):
-    queryset = LearningUnit.objects.all()
     serializer_class = LearningUnitSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return LearningUnit.objects.filter(owner=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
 
 
 class LearningUnitDetailView(generics.RetrieveAPIView):
-    queryset = LearningUnit.objects.all()
     serializer_class = LearningUnitSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return LearningUnit.objects.filter(owner=self.request.user)
 
 
 @method_decorator(csrf_exempt, name='dispatch')
 class GenerateFlashCardsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
     def post(self, request, pk):
-        learning_unit = get_object_or_404(LearningUnit, pk=pk)
+        learning_unit = get_object_or_404(LearningUnit, pk=pk, owner=request.user)
         chunks = split_into_flashcard_chunks(learning_unit.raw_content)
         chunks = merge_chunks_to_limit(chunks, learning_unit.max_flashcards)
 
@@ -135,7 +153,67 @@ class GenerateFlashCardsView(APIView):
 
 class FlashCardListView(generics.ListAPIView):
     serializer_class = FlashCardSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        learning_unit = get_object_or_404(LearningUnit, pk=self.kwargs['pk'])
+        learning_unit = get_object_or_404(
+            LearningUnit,
+            pk=self.kwargs['pk'],
+            owner=self.request.user,
+        )
         return learning_unit.flashcards.all()
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class RegisterView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = RegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user, token = serializer.save()
+        return Response(
+            {
+                'token': token.key,
+                'user': UserSerializer(user).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class LoginView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        token, created = AuthToken.objects.get_or_create(user=user)
+        if not created:
+            token.rotate()
+
+        return Response(
+            {
+                'token': token.key,
+                'user': UserSerializer(user).data,
+            }
+        )
+
+
+class CurrentUserView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response({'user': UserSerializer(request.user).data})
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class LogoutView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        if hasattr(request.user, 'auth_token'):
+            request.user.auth_token.delete()
+        logout(request)
+        return Response(status=status.HTTP_204_NO_CONTENT)

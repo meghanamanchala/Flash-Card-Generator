@@ -24,8 +24,38 @@ export type GenerateResponse = {
   flashcards: Flashcard[]
 }
 
+export type AuthUser = {
+  id: number
+  username: string
+}
+
 export const MAX_FLASHCARDS_LIMIT = 20
+export const AUTH_TOKEN_STORAGE_KEY = 'flash-card-generator-token'
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+})
+
+let authToken = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
+
+export function setApiToken(token: string | null) {
+  authToken = token
+
+  if (token) {
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token)
+  } else {
+    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
+  }
+}
+
+export function getApiToken() {
+  return authToken
+}
+
+api.interceptors.request.use((config) => {
+  if (authToken) {
+    config.headers.Authorization = `Bearer ${authToken}`
+  }
+
+  return config
 })
