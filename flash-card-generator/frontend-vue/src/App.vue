@@ -19,9 +19,9 @@ async function signOut() {
     <header class="app-navbar">
       <RouterLink class="brand-mark" to="/">
         <span class="brand-badge">FC</span>
-        <div>
+        <div class="brand-copy">
           <strong>Flash Card Generator</strong>
-          <small>Study deck workspace</small>
+          <small>Build and review decks</small>
         </div>
       </RouterLink>
 
@@ -44,7 +44,7 @@ async function signOut() {
 <style scoped>
 .app-shell {
   display: grid;
-  gap: 1.25rem;
+  gap: 1.5rem;
 }
 
 .app-navbar {
@@ -52,31 +52,47 @@ async function signOut() {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem 1.2rem;
-  border-radius: 24px;
+  padding: 1rem 1.25rem;
+  border-radius: 28px;
   border: 1px solid var(--color-border);
-  background: rgba(255, 255, 255, 0.74);
-  box-shadow: 0 14px 40px rgba(44, 28, 84, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94)),
+    var(--color-surface);
+  box-shadow: var(--color-shadow);
   backdrop-filter: blur(14px);
 }
 
 .brand-mark {
   display: flex;
   align-items: center;
-  gap: 0.85rem;
+  gap: 1rem;
   color: var(--color-heading);
 }
 
 .brand-badge {
   display: inline-grid;
   place-items: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #93c5fd, #4f46e5);
+  width: 3rem;
+  height: 3rem;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #1d4ed8, #335cff);
   color: #eff6ff;
   font-weight: 800;
   letter-spacing: 0.06em;
+  box-shadow: 0 14px 30px rgba(51, 92, 255, 0.28);
+}
+
+.brand-copy {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.brand-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-primary-dark);
 }
 
 .brand-mark strong,
@@ -85,7 +101,7 @@ async function signOut() {
 }
 
 .brand-mark strong {
-  font-size: 0.98rem;
+  font-size: 1rem;
 }
 
 .brand-mark small {
@@ -108,16 +124,19 @@ async function signOut() {
 }
 
 .nav-link {
-  padding: 0.72rem 1rem;
+  padding: 0.78rem 1.05rem;
   border-radius: 999px;
-  color: var(--color-heading);
-  font-weight: 600;
-  background: rgba(79, 70, 229, 0.06);
+  color: var(--color-text-muted);
+  font-weight: 700;
+  background: rgba(15, 23, 42, 0.04);
+  border: 1px solid transparent;
 }
 
 .nav-link.router-link-exact-active {
-  background: linear-gradient(135deg, #dbeafe, #c7d2fe);
-  color: #312e81;
+  background: linear-gradient(135deg, #dbe7ff, #c7d8ff);
+  color: #193cb8;
+  border-color: rgba(51, 92, 255, 0.14);
+  box-shadow: 0 10px 24px rgba(51, 92, 255, 0.14);
 }
 
 .user-chip,
@@ -128,17 +147,19 @@ async function signOut() {
 
 .user-chip {
   padding: 0.72rem 1rem;
-  background: rgba(79, 70, 229, 0.08);
+  background: rgba(15, 23, 42, 0.05);
   color: var(--color-heading);
-  font-weight: 600;
+  font-weight: 700;
+  border: 1px solid rgba(15, 23, 42, 0.05);
 }
 
 .logout-button {
-  border: 0;
+  border: 1px solid rgba(15, 23, 42, 0.08);
   padding: 0.72rem 1rem;
   cursor: pointer;
-  background: rgba(17, 24, 39, 0.06);
+  background: rgba(255, 255, 255, 0.78);
   color: var(--color-heading);
+  font-weight: 600;
 }
 
 @media (max-width: 640px) {
