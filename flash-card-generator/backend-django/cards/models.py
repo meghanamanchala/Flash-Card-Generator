@@ -4,6 +4,7 @@ from django.db import models
 class LearningUnit(models.Model):
     title = models.CharField(max_length=255)
     raw_content = models.TextField()
+    max_flashcards = models.PositiveIntegerField(default=10)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

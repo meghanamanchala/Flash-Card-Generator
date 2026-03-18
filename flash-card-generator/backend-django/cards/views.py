@@ -69,8 +69,29 @@ def split_into_flashcard_chunks(raw_content, max_words=80):
     return [chunk for chunk in chunks if len(chunk.split()) >= 5]
 
 
+def merge_chunks_to_limit(chunks, limit):
+    if limit <= 0:
+        return []
+
+    if len(chunks) <= limit:
+        return chunks
+
+    group_size = -(-len(chunks) // limit)
+    merged_chunks = [
+        ' '.join(chunks[index:index + group_size]).strip()
+        for index in range(0, len(chunks), group_size)
+    ]
+
+    return merged_chunks[:limit]
+
+
 @method_decorator(csrf_exempt, name='dispatch')
-class LearningUnitCreateView(generics.CreateAPIView):
+class LearningUnitListCreateView(generics.ListCreateAPIView):
+    queryset = LearningUnit.objects.all()
+    serializer_class = LearningUnitSerializer
+
+
+class LearningUnitDetailView(generics.RetrieveAPIView):
     queryset = LearningUnit.objects.all()
     serializer_class = LearningUnitSerializer
 
@@ -80,6 +101,7 @@ class GenerateFlashCardsView(APIView):
     def post(self, request, pk):
         learning_unit = get_object_or_404(LearningUnit, pk=pk)
         chunks = split_into_flashcard_chunks(learning_unit.raw_content)
+        chunks = merge_chunks_to_limit(chunks, learning_unit.max_flashcards)
 
         if not chunks:
             return Response(
@@ -104,6 +126,7 @@ class GenerateFlashCardsView(APIView):
             {
                 'learning_unit_id': learning_unit.id,
                 'title': learning_unit.title,
+                'max_flashcards': learning_unit.max_flashcards,
                 'flashcards': serializer.data,
             },
             status=status.HTTP_201_CREATED,

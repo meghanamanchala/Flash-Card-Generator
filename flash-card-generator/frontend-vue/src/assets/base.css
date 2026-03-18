@@ -1,12 +1,14 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap');
+
 :root {
-  --color-background: #f8f3ea;
-  --color-background-soft: rgba(255, 255, 255, 0.72);
-  --color-background-mute: #efe4d1;
-  --color-border: rgba(15, 23, 42, 0.1);
-  --color-border-hover: rgba(15, 23, 42, 0.2);
-  --color-heading: #172033;
-  --color-text: #2b3445;
-  --color-text-muted: #667085;
+  --color-background: #f6f4ff;
+  --color-background-soft: rgba(255, 255, 255, 0.78);
+  --color-background-mute: #ddd9ff;
+  --color-border: rgba(44, 28, 84, 0.12);
+  --color-border-hover: rgba(44, 28, 84, 0.24);
+  --color-heading: #20163d;
+  --color-text: #312a4b;
+  --color-text-muted: #6f678b;
 }
 
 *,
@@ -21,12 +23,24 @@ body {
   min-height: 100vh;
   color: var(--color-text);
   background:
-    radial-gradient(circle at top, rgba(251, 191, 36, 0.25), transparent 28%),
-    linear-gradient(180deg, #fff9ef 0%, #f6efe3 55%, #efe4d1 100%);
+    radial-gradient(circle at top left, rgba(87, 75, 250, 0.18), transparent 24%),
+    radial-gradient(circle at top right, rgba(255, 122, 89, 0.16), transparent 22%),
+    linear-gradient(180deg, #fcfbff 0%, #f3f0ff 56%, #e4ddff 100%);
   line-height: 1.6;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: 'Outfit', 'Segoe UI', sans-serif;
   font-size: 16px;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.02em;
 }
