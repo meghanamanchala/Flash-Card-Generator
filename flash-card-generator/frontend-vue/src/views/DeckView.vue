@@ -1,28 +1,102 @@
 <script setup lang="ts">
 import axios from 'axios'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { api, type LearningUnit } from '../services/api'
+import { api, type Flashcard, type LearningUnit } from '../services/api'
 
 const route = useRoute()
+
+type StudyRating = 'again' | 'hard' | 'good' | 'easy'
 
 const deck = ref<LearningUnit | null>(null)
 const activeCardIndex = ref(0)
 const isLoading = ref(true)
 const errorMessage = ref('')
+const isAnswerVisible = ref(false)
+const ratingCounts = ref<Record<StudyRating, number>>({
+  again: 0,
+  hard: 0,
+  good: 0,
+  easy: 0,
+})
 
 const activeCard = computed(() => {
   return deck.value?.flashcards[activeCardIndex.value] ?? null
 })
 
-const createdLabel = computed(() => {
-  if (!deck.value) {
-    return ''
+const deckHasCards = computed(() => Boolean(deck.value?.flashcards.length))
+
+const cardProgress = computed(() => {
+  if (!deck.value?.flashcards.length) {
+    return '0 / 0'
   }
 
-  return new Date(deck.value.created_at).toLocaleString()
+  return `${activeCardIndex.value + 1} / ${deck.value.flashcards.length}`
 })
+
+const sessionSummary = computed(() => [
+  { label: 'Again', value: ratingCounts.value.again, tone: 'again' },
+  { label: 'Hard', value: ratingCounts.value.hard, tone: 'hard' },
+  { label: 'Good', value: ratingCounts.value.good, tone: 'good' },
+  { label: 'Easy', value: ratingCounts.value.easy, tone: 'easy' },
+])
+
+function deriveCardSides(card: Flashcard | null) {
+  if (!card) {
+    return { question: '', answer: '' }
+  }
+
+  const normalized = card.content.replace(/\s+/g, ' ').trim()
+  const explicitQa = normalized.match(/Q(?:uestion)?[:.-]\s*(.+?)\s+A(?:nswer)?[:.-]\s*(.+)/i)
+
+  if (explicitQa?.[1] && explicitQa[2]) {
+    return {
+      question: explicitQa[1].trim(),
+      answer: explicitQa[2].trim(),
+    }
+  }
+
+  const sentences = normalized.split(/(?<=[.!?])\s+/).filter(Boolean)
+
+  if (sentences.length >= 2) {
+    const firstSentence = sentences[0] ?? ''
+    const restSentences = sentences.slice(1)
+
+    return {
+      question: firstSentence.trim(),
+      answer: restSentences.join(' ').trim(),
+    }
+  }
+
+  const words = normalized.split(/\s+/)
+
+  if (words.length > 12) {
+    return {
+      question: `${words.slice(0, 12).join(' ')}...`,
+      answer: normalized,
+    }
+  }
+
+  return {
+    question: 'What should you remember from this card?',
+    answer: normalized,
+  }
+}
+
+const activeCardSides = computed(() => deriveCardSides(activeCard.value))
+
+const activeCardLabel = computed(() => {
+  return isAnswerVisible.value ? 'Answer' : 'Question'
+})
+
+const activeCardText = computed(() => {
+  return isAnswerVisible.value ? activeCardSides.value.answer : activeCardSides.value.question
+})
+
+function resetCardState() {
+  isAnswerVisible.value = false
+}
 
 async function loadDeck() {
   isLoading.value = true
@@ -32,6 +106,13 @@ async function loadDeck() {
     const { data } = await api.get<LearningUnit>(`/learning-units/${route.params.id}/`)
     deck.value = data
     activeCardIndex.value = 0
+    resetCardState()
+    ratingCounts.value = {
+      again: 0,
+      hard: 0,
+      good: 0,
+      easy: 0,
+    }
   } catch (error) {
     if (axios.isAxiosError(error)) {
       errorMessage.value = error.response?.data?.detail || 'This saved deck could not be loaded.'
@@ -50,6 +131,7 @@ function showPreviousCard() {
 
   activeCardIndex.value =
     activeCardIndex.value === 0 ? deck.value.flashcards.length - 1 : activeCardIndex.value - 1
+  resetCardState()
 }
 
 function showNextCard() {
@@ -59,6 +141,58 @@ function showNextCard() {
 
   activeCardIndex.value =
     activeCardIndex.value === deck.value.flashcards.length - 1 ? 0 : activeCardIndex.value + 1
+  resetCardState()
+}
+
+function revealAnswer() {
+  if (!activeCard.value) {
+    return
+  }
+
+  isAnswerVisible.value = true
+}
+
+function rateCard(rating: StudyRating) {
+  ratingCounts.value = {
+    ...ratingCounts.value,
+    [rating]: ratingCounts.value[rating] + 1,
+  }
+  showNextCard()
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'ArrowLeft') {
+    showPreviousCard()
+  }
+
+  if (event.key === 'ArrowRight') {
+    showNextCard()
+  }
+
+  if (event.code === 'Space') {
+    event.preventDefault()
+    revealAnswer()
+  }
+
+  if (!isAnswerVisible.value) {
+    return
+  }
+
+  if (event.key === '1') {
+    rateCard('again')
+  }
+
+  if (event.key === '2') {
+    rateCard('hard')
+  }
+
+  if (event.key === '3') {
+    rateCard('good')
+  }
+
+  if (event.key === '4') {
+    rateCard('easy')
+  }
 }
 
 watch(
@@ -69,303 +203,265 @@ watch(
 )
 
 onMounted(() => {
+  window.addEventListener('keydown', handleKeydown)
   void loadDeck()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeydown)
 })
 </script>
 
 <template>
-  <main class="deck-page">
-    <section class="deck-header">
-      <div>
-        <p class="eyebrow">Saved Deck</p>
-        <h1>{{ deck?.title || 'Flashcard deck' }}</h1>
-        <p class="deck-subtitle">
-          {{ deck ? `${deck.flashcards.length} cards generated • saved ${createdLabel}` : 'Loading deck...' }}
-        </p>
-      </div>
-      <div class="header-actions">
-        <RouterLink class="ghost-link" to="/">Dashboard</RouterLink>
-        <RouterLink class="primary-link" to="/create">Create another</RouterLink>
-      </div>
-    </section>
+  <main class="study-page">
+    <section class="study-frame">
+      <header class="study-bar">
+        <RouterLink class="back-link" to="/">
+          <span aria-hidden="true">←</span>
+        </RouterLink>
+        <span class="study-progress">{{ cardProgress }}</span>
+      </header>
 
-    <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
+      <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
 
-    <section v-if="deck && !isLoading" class="deck-layout">
-      <aside class="deck-sidebar">
-        <div class="sidebar-card">
-          <span class="label">Source title</span>
-          <strong>{{ deck.title }}</strong>
-        </div>
-        <div class="sidebar-card">
-          <span class="label">Chosen max cards</span>
-          <strong>{{ deck.max_flashcards }}</strong>
-        </div>
-        <div class="sidebar-card">
-          <span class="label">Stored content</span>
-          <p>{{ deck.raw_content }}</p>
-        </div>
-      </aside>
-
-      <section class="review-panel">
-        <article v-if="activeCard" class="hero-card">
-          <div class="hero-card-meta">
-            <span>Card {{ activeCard.order }}</span>
-            <span>{{ activeCardIndex + 1 }} / {{ deck.flashcards.length }}</span>
-          </div>
-          <p>{{ activeCard.content }}</p>
+      <section v-if="deck && !isLoading && deckHasCards" class="study-shell">
+        <article class="study-card" role="button" tabindex="0" @click="revealAnswer">
+          <span class="card-label">{{ activeCardLabel }}</span>
+          <h1>{{ activeCardText }}</h1>
+          <p v-if="!isAnswerVisible" class="card-hint">Press Space to reveal</p>
         </article>
 
-        <div class="review-controls">
-          <button class="ghost-button" type="button" @click="showPreviousCard">Previous</button>
-          <button class="ghost-button" type="button" @click="showNextCard">Next</button>
+        <div v-if="isAnswerVisible" class="rating-row">
+          <button class="rating-chip again" type="button" @click="rateCard('again')">1 — Again</button>
+          <button class="rating-chip hard" type="button" @click="rateCard('hard')">2 — Hard</button>
+          <button class="rating-chip good" type="button" @click="rateCard('good')">3 — Good</button>
+          <button class="rating-chip easy" type="button" @click="rateCard('easy')">4 — Easy</button>
         </div>
 
-        <div class="card-strip">
-          <button
-            v-for="(card, index) in deck.flashcards"
-            :key="card.id"
-            class="strip-card"
-            :class="{ active: index === activeCardIndex }"
-            type="button"
-            @click="activeCardIndex = index"
-          >
-            <span>Card {{ card.order }}</span>
-            <p>{{ card.content }}</p>
-          </button>
+        <div v-else class="study-actions">
+          <button class="ghost-button" type="button" @click="showPreviousCard">Previous</button>
+          <button class="primary-button" type="button" @click="revealAnswer">Reveal</button>
+          <button class="ghost-button" type="button" @click="showNextCard">Skip</button>
+        </div>
+
+        <div class="session-row">
+          <span v-for="item in sessionSummary" :key="item.label" class="summary-chip" :class="item.tone">
+            {{ item.label }} {{ item.value }}
+          </span>
         </div>
       </section>
-    </section>
 
-    <section v-else-if="isLoading" class="empty-state">
-      <h2>Loading saved deck...</h2>
-      <p>We are pulling the stored title, source content, and generated flashcards from the backend.</p>
+      <section v-else-if="deck && !isLoading" class="empty-state">
+        <h2>No flashcards were generated for this deck.</h2>
+        <p>Try creating another deck with more detailed notes or textbook content.</p>
+        <RouterLink class="primary-button link-button" to="/create">Create another deck</RouterLink>
+      </section>
+
+      <section v-else class="empty-state">
+        <h2>{{ isLoading ? 'Loading deck...' : 'Deck unavailable' }}</h2>
+        <p>
+          {{
+            isLoading
+              ? 'Preparing your study session.'
+              : 'We could not open this study deck right now.'
+          }}
+        </p>
+      </section>
     </section>
   </main>
 </template>
 
 <style scoped>
-.deck-page {
+.study-page {
   display: grid;
-  gap: 1.6rem;
 }
 
-.deck-header,
-.deck-sidebar,
-.review-panel,
-.empty-state {
-  border-radius: 28px;
+.study-frame {
+  min-height: calc(100vh - 120px);
   border: 1px solid var(--color-border);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 247, 252, 0.98)),
+    var(--color-surface);
   box-shadow: var(--color-shadow);
 }
 
-.deck-header {
+.study-bar {
   display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1.5rem;
-  background:
-    radial-gradient(circle at 80% 20%, rgba(125, 211, 252, 0.22), transparent 20%),
-    linear-gradient(135deg, #0f172a 0%, #102a53 52%, #133b75 100%);
-  color: #f8fbff;
-}
-
-.eyebrow,
-.label,
-.hero-card-meta span,
-.strip-card span {
-  font-size: 0.78rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.deck-header h1 {
-  margin: 0.45rem 0 0.35rem;
-  font-size: clamp(2.2rem, 5vw, 4rem);
-  line-height: 0.98;
-}
-
-.deck-subtitle {
-  color: rgba(248, 251, 255, 0.78);
-}
-
-.header-actions {
-  display: flex;
+  align-items: center;
   gap: 0.75rem;
-  flex-wrap: wrap;
+  padding: 0.95rem 1.4rem;
 }
 
-.ghost-link,
-.primary-link,
-.ghost-button {
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
   border-radius: 999px;
-  padding: 0.85rem 1.15rem;
-  text-decoration: none;
-  font: inherit;
-}
-
-.primary-link {
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
-  color: #eef2ff;
-  box-shadow: 0 16px 34px rgba(51, 92, 255, 0.24);
-}
-
-.ghost-link,
-.ghost-button {
-  background: rgba(255, 255, 255, 0.08);
-  color: #f8fbff;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  cursor: pointer;
-}
-
-.deck-layout {
-  display: grid;
-  gap: 1.5rem;
-}
-
-.deck-sidebar,
-.review-panel,
-.empty-state {
-  padding: 1.35rem;
-  background: var(--color-surface);
-}
-
-.deck-sidebar {
-  display: grid;
-  gap: 1rem;
-  align-content: start;
-}
-
-.sidebar-card {
-  padding: 1rem;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.sidebar-card strong {
-  display: block;
-  margin-top: 0.3rem;
-  color: var(--color-heading);
-  font-size: 1.15rem;
-}
-
-.sidebar-card p {
-  margin-top: 0.4rem;
-  color: var(--color-text);
-  white-space: pre-wrap;
-}
-
-.label {
   color: var(--color-text-muted);
 }
 
-.review-panel {
+.study-progress {
+  color: var(--color-text-muted);
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.study-shell,
+.empty-state {
+  min-height: calc(100vh - 220px);
   display: grid;
-  gap: 1rem;
+  place-items: center;
+  padding: 1.5rem;
 }
 
-.hero-card {
-  min-height: 280px;
-  padding: 1.35rem;
-  border-radius: 26px;
+.study-shell {
+  gap: 1.2rem;
+}
+
+.study-card {
+  width: min(100%, 720px);
+  min-height: 250px;
+  display: grid;
+  align-content: center;
+  gap: 1.5rem;
+  padding: 2rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 24px;
   background:
-    radial-gradient(circle at top right, rgba(51, 92, 255, 0.14), transparent 22%),
-    linear-gradient(165deg, #ffffff, #eef4ff);
-  border: 1px solid rgba(51, 92, 255, 0.16);
+    linear-gradient(180deg, #ffffff, #f6f8fd),
+    #ffffff;
+  box-shadow: var(--color-shadow-strong);
+  cursor: pointer;
 }
 
-.hero-card-meta {
+.card-label {
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.study-card h1 {
+  font-size: clamp(1.9rem, 3vw, 2.6rem);
+  line-height: 1.35;
+  font-weight: 500;
+}
+
+.card-hint {
+  color: var(--color-text-muted);
+  font-size: 1rem;
+}
+
+.study-actions,
+.rating-row,
+.session-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
-  color: var(--color-primary-dark);
-}
-
-.hero-card p {
-  font-size: clamp(1.1rem, 2.3vw, 1.5rem);
-  line-height: 1.45;
-  color: var(--color-text);
-}
-
-.review-controls {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
+  justify-content: center;
+  gap: 0.8rem;
   flex-wrap: wrap;
 }
 
-.card-strip {
-  display: grid;
-  gap: 0.8rem;
-}
-
-.strip-card {
-  width: 100%;
-  text-align: left;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 20px;
-  padding: 0.95rem 1rem;
-  cursor: pointer;
-  background: rgba(255, 255, 255, 0.94);
+.ghost-button,
+.primary-button,
+.rating-chip,
+.summary-chip {
+  border-radius: 14px;
   font: inherit;
 }
 
-.strip-card span {
-  display: block;
-  margin-bottom: 0.3rem;
-  color: var(--color-primary-dark);
+.ghost-button,
+.primary-button,
+.rating-chip {
+  border: 0;
+  padding: 0.9rem 1.15rem;
+  cursor: pointer;
+  font-weight: 600;
 }
 
-.strip-card p {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  color: var(--color-text);
+.ghost-button {
+  background: var(--color-panel);
+  color: var(--color-heading);
+  border: 1px solid var(--color-border);
 }
 
-.strip-card.active {
-  border-color: rgba(51, 92, 255, 0.28);
-  background: linear-gradient(135deg, rgba(240, 245, 255, 1), rgba(229, 238, 255, 0.94));
-  box-shadow: 0 12px 24px rgba(51, 92, 255, 0.1);
+.primary-button {
+  background: linear-gradient(180deg, #3b6cff, #2f5de6);
+  color: #ffffff;
+  box-shadow: 0 14px 28px rgba(47, 93, 230, 0.18);
+}
+
+.rating-chip.again,
+.summary-chip.again {
+  background: #ffe8e8;
+  color: #ff4d4f;
+}
+
+.rating-chip.hard,
+.summary-chip.hard {
+  background: #ece7de;
+  color: #7b6b56;
+}
+
+.rating-chip.good,
+.summary-chip.good {
+  background: #dbf2e2;
+  color: #1f8a46;
+}
+
+.rating-chip.easy,
+.summary-chip.easy {
+  background: #dde8ff;
+  color: #3663f0;
+}
+
+.summary-chip {
+  padding: 0.55rem 0.85rem;
+  font-size: 0.92rem;
+  font-weight: 600;
 }
 
 .empty-state {
-  min-height: 320px;
-  display: grid;
-  place-items: center;
+  gap: 0.8rem;
   text-align: center;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.92)),
-    var(--color-panel);
+}
+
+.empty-state h2 {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.empty-state p {
+  max-width: 40ch;
+  color: var(--color-text-muted);
+}
+
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .error-banner {
-  border-radius: 18px;
+  margin: 0 1.4rem;
   padding: 0.95rem 1rem;
-  background: rgba(220, 38, 38, 0.08);
-  color: #991b1b;
+  border-radius: 16px;
+  background: #fff1f0;
+  color: #c24144;
 }
 
-@media (min-width: 940px) {
-  .deck-layout {
-    grid-template-columns: minmax(290px, 0.7fr) minmax(0, 1.3fr);
-    align-items: start;
+@media (max-width: 720px) {
+  .study-card {
+    min-height: 220px;
+    padding: 1.5rem;
   }
 
-  .card-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 640px) {
-  .deck-header {
-    align-items: start;
-    flex-direction: column;
+  .study-card h1 {
+    font-size: 1.6rem;
   }
 }
 </style>

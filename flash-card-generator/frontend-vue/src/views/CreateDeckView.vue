@@ -1,17 +1,22 @@
 <script setup lang="ts">
 import axios from 'axios'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { api, MAX_FLASHCARDS_LIMIT } from '../services/api'
 
 const router = useRouter()
+const DRAFT_STORAGE_KEY = 'flash-card-generator-create-draft'
+
+const SAMPLE_TITLE = 'Cell Biology Fundamentals'
+const SAMPLE_CONTENT = `Cells rely on specialized organelles to stay alive and perform complex work. The nucleus stores genetic information and coordinates many cell activities. Mitochondria are often called the powerhouses of the cell because they generate ATP, which provides usable energy. Ribosomes build proteins by translating genetic instructions. The endoplasmic reticulum helps process proteins and lipids, while the Golgi apparatus modifies, packages, and ships materials where they are needed.`
 
 const title = ref('')
 const rawContent = ref('')
 const maxFlashcards = ref(8)
 const isSubmitting = ref(false)
 const errorMessage = ref('')
+const submitStage = ref<'idle' | 'saving' | 'generating'>('idle')
 
 const wordCount = computed(() => {
   const content = rawContent.value.trim()
@@ -22,13 +27,37 @@ const canSubmit = computed(() => {
   return title.value.trim().length > 0 && rawContent.value.trim().length >= 20 && !isSubmitting.value
 })
 
-const helperText = computed(() => {
-  if (!wordCount.value) {
-    return 'Paste your notes or lesson summary to start.'
+const submitLabel = computed(() => {
+  if (!isSubmitting.value) {
+    return 'Generate Deck'
   }
 
-  return `${wordCount.value} words ready for generation.`
+  return submitStage.value === 'saving' ? 'Saving...' : 'Generating...'
 })
+
+const helperCopy = computed(() => {
+  if (!rawContent.value.trim()) {
+    return 'Paste your learning content here.'
+  }
+
+  return `${wordCount.value} words ready, up to ${maxFlashcards.value} cards.`
+})
+
+function persistDraft() {
+  localStorage.setItem(
+    DRAFT_STORAGE_KEY,
+    JSON.stringify({
+      title: title.value,
+      rawContent: rawContent.value,
+      maxFlashcards: maxFlashcards.value,
+    }),
+  )
+}
+
+function fillSampleText() {
+  title.value = SAMPLE_TITLE
+  rawContent.value = SAMPLE_CONTENT
+}
 
 async function createDeck() {
   if (!canSubmit.value) {
@@ -36,18 +65,21 @@ async function createDeck() {
   }
 
   isSubmitting.value = true
+  submitStage.value = 'saving'
   errorMessage.value = ''
 
   try {
     const learningUnitResponse = await api.post('/learning-units/', {
       title: title.value.trim(),
       raw_content: rawContent.value.trim(),
-      max_flashcards: maxFlashcards.value,
+      max_flashcards: Math.min(MAX_FLASHCARDS_LIMIT, Math.max(1, maxFlashcards.value)),
     })
 
     const learningUnitId = learningUnitResponse.data.id as number
 
+    submitStage.value = 'generating'
     await api.post(`/learning-units/${learningUnitId}/generate-cards/`)
+    localStorage.removeItem(DRAFT_STORAGE_KEY)
 
     await router.push({
       name: 'deck',
@@ -63,78 +95,95 @@ async function createDeck() {
     }
   } finally {
     isSubmitting.value = false
+    submitStage.value = 'idle'
   }
 }
+
+onMounted(() => {
+  const savedDraft = localStorage.getItem(DRAFT_STORAGE_KEY)
+
+  if (!savedDraft) {
+    return
+  }
+
+  try {
+    const parsedDraft = JSON.parse(savedDraft) as {
+      title?: string
+      rawContent?: string
+      maxFlashcards?: number
+    }
+
+    title.value = parsedDraft.title ?? ''
+    rawContent.value = parsedDraft.rawContent ?? ''
+    maxFlashcards.value = Math.min(
+      MAX_FLASHCARDS_LIMIT,
+      Math.max(1, parsedDraft.maxFlashcards ?? maxFlashcards.value),
+    )
+  } catch {
+    localStorage.removeItem(DRAFT_STORAGE_KEY)
+  }
+})
+
+watch([title, rawContent, maxFlashcards], () => {
+  persistDraft()
+})
 </script>
 
 <template>
   <main class="create-page">
-    <RouterLink class="text-link top-link" to="/">Back to dashboard</RouterLink>
+    <section class="create-frame">
+      <header class="page-bar">
+        <RouterLink class="back-link" to="/">
+          <span aria-hidden="true">←</span>
+          <span>New Deck</span>
+        </RouterLink>
+      </header>
 
-    <section class="editor-shell">
-      <form class="editor-panel" @submit.prevent="createDeck">
-        <div class="section-head">
-          <h2>New deck</h2>
-          <p>Save the title, source text, and generated cards together for later review.</p>
-        </div>
+      <form class="editor-shell" @submit.prevent="createDeck">
+        <div class="editor-stack">
+          <label class="title-field">
+            <span class="sr-only">Deck title</span>
+            <input v-model="title" type="text" maxlength="255" placeholder="Deck title" />
+          </label>
 
-        <label class="field">
-          <span>Deck title</span>
-          <input
-            v-model="title"
-            type="text"
-            maxlength="255"
-            placeholder="Example: Human digestive system"
-          />
-        </label>
+          <label class="content-field">
+            <span class="sr-only">Learning content</span>
+            <textarea
+              v-model="rawContent"
+              rows="14"
+              placeholder="Paste your learning content here — articles, notes, textbook excerpts..."
+            />
+          </label>
 
-        <label class="field">
-          <span>Content to turn into flashcards</span>
-          <textarea
-            v-model="rawContent"
-            rows="14"
-            placeholder="Paste textbook notes, a chapter summary, or lecture content here..."
-          />
-        </label>
+          <div class="controls-row">
+            <div class="slider-panel">
+              <div class="slider-copy">
+                <strong>{{ maxFlashcards }} cards</strong>
+                <span>{{ helperCopy }}</span>
+              </div>
+              <input
+                v-model.number="maxFlashcards"
+                class="slider-input"
+                type="range"
+                min="1"
+                :max="MAX_FLASHCARDS_LIMIT"
+              />
+            </div>
 
-        <label class="field">
-          <span>How many flashcards do you need?</span>
-          <input v-model.number="maxFlashcards" type="range" min="1" :max="MAX_FLASHCARDS_LIMIT" />
-          <div class="range-meta">
-            <strong>{{ maxFlashcards }} cards</strong>
-            <span>Maximum allowed: {{ MAX_FLASHCARDS_LIMIT }}</span>
+            <div class="action-row">
+              <button class="sample-button" type="button" @click="fillSampleText">
+                Try Sample Text
+                <span aria-hidden="true">→</span>
+              </button>
+              <button class="primary-button" type="submit" :disabled="!canSubmit">
+                {{ submitLabel }}
+              </button>
+            </div>
           </div>
-        </label>
 
-        <div class="form-actions">
-          <button class="primary-button" type="submit" :disabled="!canSubmit">
-            {{ isSubmitting ? 'Creating deck...' : 'Generate and open deck' }}
-          </button>
+          <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
         </div>
-
-        <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
       </form>
-
-      <aside class="side-panel">
-        <div class="metric-card">
-          <div class="metric-head">
-            <span class="metric-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" role="presentation">
-                <path
-                  d="M7 6.75A1.75 1.75 0 0 1 8.75 5h6.5A1.75 1.75 0 0 1 17 6.75v10.5A1.75 1.75 0 0 1 15.25 19h-6.5A1.75 1.75 0 0 1 7 17.25Z"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                />
-                <path d="M10 9h4M10 12h4M10 15h2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-              </svg>
-            </span>
-            <span class="metric-label">Word count</span>
-          </div>
-          <strong>{{ wordCount }}</strong>
-          <p>{{ helperText }}</p>
-        </div>
-      </aside>
     </section>
   </main>
 </template>
@@ -142,286 +191,194 @@ async function createDeck() {
 <style scoped>
 .create-page {
   display: grid;
-  gap: 1.6rem;
 }
 
-.create-hero,
-.editor-panel,
-.side-panel {
-  border-radius: 28px;
+.create-frame {
+  min-height: calc(100vh - 120px);
   border: 1px solid var(--color-border);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 247, 252, 0.98)),
+    var(--color-surface);
   box-shadow: var(--color-shadow);
 }
 
-.text-link {
-  color: var(--color-heading);
+.page-bar {
+  padding: 0.95rem 1.4rem;
+  border-bottom: 1px solid var(--color-border);
 }
 
-.top-link {
-  justify-self: start;
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--color-heading);
+  font-size: 1.05rem;
   font-weight: 600;
-}
-
-.create-hero {
-  display: grid;
-  gap: 1.25rem;
-  padding: 1.5rem;
-  background:
-    radial-gradient(circle at top right, rgba(51, 92, 255, 0.14), transparent 23%),
-    linear-gradient(135deg, #ffffff, #f6f9ff 55%, #eef4ff);
-}
-
-.hero-copy {
-  display: grid;
-  gap: 0.7rem;
-  max-width: 58ch;
-}
-
-.eyebrow {
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--color-primary-dark);
-}
-
-.hero-copy h1 {
-  color: var(--color-heading);
-  font-size: clamp(2rem, 4vw, 3.2rem);
-  line-height: 1;
-}
-
-.hero-copy p {
-  color: var(--color-text-muted);
-  font-size: 1rem;
-}
-
-.hero-chip {
-  display: grid;
-  gap: 0.2rem;
-  align-self: end;
-  min-width: 210px;
-  padding: 1rem 1.1rem;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.88);
-  border: 1px solid rgba(51, 92, 255, 0.12);
-}
-
-.hero-chip-label {
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-}
-
-.hero-chip strong {
-  color: var(--color-heading);
-  font-size: 1.1rem;
 }
 
 .editor-shell {
   display: grid;
+  place-items: center;
+  padding: 2.5rem 1.25rem 3rem;
+}
+
+.editor-stack {
+  width: min(100%, 900px);
+  display: grid;
   gap: 1.5rem;
 }
 
-.editor-panel,
-.side-panel {
-  background: var(--color-surface);
-}
-
-.editor-panel {
-  padding: 1.5rem;
-}
-
-.section-head {
-  margin-bottom: 1.35rem;
-}
-
-.section-head h2 {
-  margin-bottom: 0.35rem;
-  color: var(--color-heading);
-  font-size: clamp(1.9rem, 3vw, 2.5rem);
-  line-height: 1.05;
-}
-
-.section-head p {
-  color: var(--color-text-muted);
-  max-width: 58ch;
-}
-
-.field {
-  display: grid;
-  gap: 0.6rem;
-  margin-bottom: 1.15rem;
-}
-
-.field span {
-  font-weight: 700;
-  color: var(--color-heading);
-}
-
-.field input,
-.field textarea {
-  width: 100%;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 20px;
-  padding: 1rem 1.05rem;
-  background: rgba(255, 255, 255, 0.98);
-  color: var(--color-text);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
-}
-
-.field textarea {
-  min-height: 280px;
-  resize: vertical;
-}
-
-.field input:focus,
-.field textarea:focus {
-  outline: none;
-  border-color: rgba(51, 92, 255, 0.45);
-  box-shadow: 0 0 0 4px rgba(51, 92, 255, 0.12);
-}
-
-.field input[type='range'] {
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
   padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
 }
 
-.range-meta {
+.title-field input,
+.content-field textarea {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 22px;
+  color: var(--color-heading);
+  background: var(--color-panel);
+}
+
+.title-field input {
+  padding: 0.2rem 0;
+  background: transparent;
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 700;
+  letter-spacing: -0.05em;
+}
+
+.content-field textarea {
+  min-height: 350px;
+  padding: 1.35rem 1.2rem;
+  resize: vertical;
+  font-size: 1.05rem;
+  line-height: 1.7;
+  border-color: rgba(15, 23, 42, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.title-field input:focus,
+.content-field textarea:focus,
+.slider-input:focus {
+  outline: none;
+}
+
+.content-field textarea:focus {
+  border-color: rgba(47, 93, 230, 0.24);
+  box-shadow: 0 0 0 3px rgba(47, 93, 230, 0.1);
+}
+
+.controls-row {
   display: flex;
-  align-items: center;
+  align-items: end;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.slider-panel {
+  min-width: 280px;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.slider-copy {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.slider-copy strong {
+  color: var(--color-heading);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.slider-copy span {
   color: var(--color-text-muted);
   font-size: 0.95rem;
 }
 
-.range-meta strong {
-  color: var(--color-heading);
+.slider-input {
+  accent-color: var(--color-primary);
 }
 
-.form-actions {
+.action-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  gap: 0.85rem;
   flex-wrap: wrap;
 }
 
-.side-panel {
-  display: grid;
-  gap: 1rem;
-  padding: 1.25rem;
-}
-
-.metric-card {
-  padding: 1.1rem;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
-}
-
-.metric-card.accent {
-  background: linear-gradient(180deg, #f3f9ff, #e2f2ff);
-}
-
-.metric-head {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-}
-
-.metric-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 12px;
-  background: var(--color-primary-soft);
-  color: var(--color-primary-dark);
-}
-
-.metric-icon svg {
-  width: 1rem;
-  height: 1rem;
-}
-
-.metric-label {
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.metric-card strong {
-  display: block;
-  margin: 0.7rem 0 0.35rem;
-  color: var(--color-heading);
-  font-size: 1.45rem;
-  line-height: 1.15;
-}
-
-.metric-card p {
-  color: var(--color-text-muted);
-}
-
+.sample-button,
 .primary-button {
-  border: 1px solid transparent;
-  border-radius: 999px;
-  padding: 0.95rem 1.3rem;
+  border: 0;
+  border-radius: 16px;
+  padding: 0.95rem 1.25rem;
   cursor: pointer;
   font-weight: 700;
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease,
-    background 0.2s ease;
+}
+
+.sample-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  background: var(--color-panel-strong);
+  color: var(--color-primary-dark);
+  border: 1px solid rgba(47, 93, 230, 0.12);
 }
 
 .primary-button {
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
-  color: #eef2ff;
-  box-shadow: 0 16px 34px rgba(51, 92, 255, 0.24);
-}
-
-.primary-button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 20px 36px rgba(51, 92, 255, 0.28);
+  background: linear-gradient(180deg, #3b6cff, #2f5de6);
+  color: #ffffff;
+  box-shadow: 0 14px 28px rgba(47, 93, 230, 0.18);
 }
 
 .primary-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
-  transform: none;
+  box-shadow: none;
 }
 
 .error-banner {
-  margin-top: 1rem;
-  border-radius: 18px;
   padding: 0.95rem 1rem;
-  background: rgba(220, 38, 38, 0.08);
-  color: #991b1b;
+  border-radius: 16px;
+  background: #fff1f0;
+  color: #c24144;
 }
 
-@media (min-width: 920px) {
-  .create-hero {
-    grid-template-columns: minmax(0, 1.25fr) auto;
-    align-items: end;
-  }
-
+@media (max-width: 720px) {
   .editor-shell {
-    grid-template-columns: minmax(0, 1.3fr) minmax(290px, 0.7fr);
-    align-items: start;
+    padding: 1.6rem 1rem 2rem;
   }
-}
 
-@media (max-width: 640px) {
-  .range-meta,
-  .form-actions {
-    align-items: start;
+  .content-field textarea {
+    min-height: 280px;
+  }
+
+  .controls-row,
+  .action-row {
+    align-items: stretch;
     flex-direction: column;
+  }
+
+  .slider-panel {
+    min-width: 100%;
+  }
+
+  .sample-button,
+  .primary-button {
+    width: 100%;
+    justify-content: center;
   }
 }
 </style>
