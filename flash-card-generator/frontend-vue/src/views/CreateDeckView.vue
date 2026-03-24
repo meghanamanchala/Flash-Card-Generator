@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import axios from 'axios'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
-import { api, MAX_FLASHCARDS_LIMIT } from '../services/api'
+import {
+  api,
+  MAX_FLASHCARDS_LIMIT,
+  type Flashcard,
+  type GenerateResponse,
+  type LearningUnit,
+  type ReviewFlashcardInput,
+} from '../services/api'
 
 const router = useRouter()
+const route = useRoute()
 const DRAFT_STORAGE_KEY = 'flash-card-generator-create-draft'
 
 const SAMPLE_TITLE = 'Cell Biology Fundamentals'
@@ -17,6 +25,15 @@ const maxFlashcards = ref(8)
 const isSubmitting = ref(false)
 const errorMessage = ref('')
 const submitStage = ref<'idle' | 'saving' | 'generating'>('idle')
+const currentStep = ref<'editing' | 'review'>('editing')
+const reviewDeckId = ref<number | null>(null)
+const isFinishingReview = ref(false)
+const isLoadingExistingDeck = ref(false)
+
+type ReviewCard = Flashcard & {
+  keep: boolean
+  score: number
+}
 
 const wordCount = computed(() => {
   const content = rawContent.value.trim()
@@ -24,12 +41,30 @@ const wordCount = computed(() => {
 })
 
 const canSubmit = computed(() => {
-  return title.value.trim().length > 0 && rawContent.value.trim().length >= 20 && !isSubmitting.value
+  return (
+    title.value.trim().length > 0 &&
+    rawContent.value.trim().length >= 20 &&
+    !isSubmitting.value &&
+    !isLoadingExistingDeck.value
+  )
 })
+
+const editingDeckId = computed(() => {
+  const rawDeckId = route.query.deckId
+  const parsed = Number(Array.isArray(rawDeckId) ? rawDeckId[0] : rawDeckId)
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null
+  }
+
+  return parsed
+})
+
+const isEditingExistingDeck = computed(() => editingDeckId.value !== null)
 
 const submitLabel = computed(() => {
   if (!isSubmitting.value) {
-    return 'Generate Deck'
+    return isEditingExistingDeck.value ? 'Regenerate Deck' : 'Generate Deck'
   }
 
   return submitStage.value === 'saving' ? 'Saving...' : 'Generating...'
@@ -43,7 +78,45 @@ const helperCopy = computed(() => {
   return `${wordCount.value} words ready, up to ${maxFlashcards.value} cards.`
 })
 
+const reviewCards = ref<ReviewCard[]>([])
+
+const keptCards = computed(() => {
+  return reviewCards.value.filter((card) => {
+    return card.keep && card.question.trim().length > 0 && card.answer.trim().length > 0
+  })
+})
+
+const canFinishReview = computed(() => {
+  return reviewDeckId.value !== null && keptCards.value.length > 0 && !isFinishingReview.value
+})
+
+const reviewSummary = computed(() => {
+  const keptCount = keptCards.value.length
+  const totalCount = reviewCards.value.length
+  return `Draft cards — ${keptCount} kept${totalCount ? ` of ${totalCount}` : ''}`
+})
+
+const pageTitle = computed(() => {
+  if (currentStep.value === 'review') {
+    return 'Review Cards'
+  }
+
+  return isEditingExistingDeck.value ? 'Edit Deck' : 'New Deck'
+})
+
+function buildReviewCards(flashcards: Flashcard[]) {
+  return flashcards.map((flashcard, index) => ({
+    ...flashcard,
+    keep: true,
+    score: 88 + ((flashcard.question.length + flashcard.answer.length + index * 5) % 10),
+  }))
+}
+
 function persistDraft() {
+  if (isEditingExistingDeck.value) {
+    return
+  }
+
   localStorage.setItem(
     DRAFT_STORAGE_KEY,
     JSON.stringify({
@@ -59,50 +132,71 @@ function fillSampleText() {
   rawContent.value = SAMPLE_CONTENT
 }
 
-async function createDeck() {
-  if (!canSubmit.value) {
-    return
-  }
+function returnToEditing() {
+  currentStep.value = 'editing'
+  errorMessage.value = ''
+}
 
-  isSubmitting.value = true
-  submitStage.value = 'saving'
+function toggleKeep(cardId: number) {
+  reviewCards.value = reviewCards.value.map((card) =>
+    card.id === cardId
+      ? {
+          ...card,
+          keep: !card.keep,
+        }
+      : card,
+  )
+}
+
+function buildReviewPayload(): ReviewFlashcardInput[] {
+  return keptCards.value.map((card) => ({
+    question: card.question.trim(),
+    answer: card.answer.trim(),
+    content: card.content.trim() || `${card.question.trim()} ${card.answer.trim()}`,
+  }))
+}
+
+function hydrateEditorState(deck: LearningUnit) {
+  title.value = deck.title
+  rawContent.value = deck.raw_content
+  maxFlashcards.value = Math.min(
+    MAX_FLASHCARDS_LIMIT,
+    Math.max(1, deck.max_flashcards ?? maxFlashcards.value),
+  )
+  reviewDeckId.value = deck.id
+  reviewCards.value = deck.flashcards.length ? buildReviewCards(deck.flashcards) : []
+  currentStep.value = 'editing'
+}
+
+async function loadExistingDeck(deckId: number) {
+  isLoadingExistingDeck.value = true
   errorMessage.value = ''
 
   try {
-    const learningUnitResponse = await api.post('/learning-units/', {
-      title: title.value.trim(),
-      raw_content: rawContent.value.trim(),
-      max_flashcards: Math.min(MAX_FLASHCARDS_LIMIT, Math.max(1, maxFlashcards.value)),
-    })
-
-    const learningUnitId = learningUnitResponse.data.id as number
-
-    submitStage.value = 'generating'
-    await api.post(`/learning-units/${learningUnitId}/generate-cards/`)
-    localStorage.removeItem(DRAFT_STORAGE_KEY)
-
-    await router.push({
-      name: 'deck',
-      params: { id: learningUnitId.toString() },
-    })
+    const { data } = await api.get<LearningUnit>(`/learning-units/${deckId}/`)
+    hydrateEditorState(data)
   } catch (error) {
     if (axios.isAxiosError(error)) {
-      errorMessage.value =
-        error.response?.data?.detail ||
-        'The deck could not be created right now. Please try again with more complete content.'
+      errorMessage.value = error.response?.data?.detail || 'This deck could not be opened for editing.'
     } else {
-      errorMessage.value = 'Something went wrong while saving the deck.'
+      errorMessage.value = 'Something went wrong while loading the deck editor.'
     }
   } finally {
-    isSubmitting.value = false
-    submitStage.value = 'idle'
+    isLoadingExistingDeck.value = false
   }
 }
 
-onMounted(() => {
+function restoreDraft() {
+  reviewDeckId.value = null
+  currentStep.value = 'editing'
+  reviewCards.value = []
+
   const savedDraft = localStorage.getItem(DRAFT_STORAGE_KEY)
 
   if (!savedDraft) {
+    title.value = ''
+    rawContent.value = ''
+    maxFlashcards.value = 8
     return
   }
 
@@ -122,24 +216,124 @@ onMounted(() => {
   } catch {
     localStorage.removeItem(DRAFT_STORAGE_KEY)
   }
+}
+
+async function createDeck() {
+  if (!canSubmit.value) {
+    return
+  }
+
+  isSubmitting.value = true
+  submitStage.value = 'saving'
+  errorMessage.value = ''
+
+  try {
+    const payload = {
+      title: title.value.trim(),
+      raw_content: rawContent.value.trim(),
+      max_flashcards: Math.min(MAX_FLASHCARDS_LIMIT, Math.max(1, maxFlashcards.value)),
+    }
+
+    let learningUnitId = reviewDeckId.value
+
+    if (learningUnitId === null) {
+      const learningUnitResponse = await api.post('/learning-units/', payload)
+      learningUnitId = learningUnitResponse.data.id as number
+    } else {
+      await api.patch(`/learning-units/${learningUnitId}/`, payload)
+    }
+
+    submitStage.value = 'generating'
+    const { data } = await api.post<GenerateResponse>(`/learning-units/${learningUnitId}/generate-cards/`)
+    reviewDeckId.value = learningUnitId
+    reviewCards.value = buildReviewCards(data.flashcards)
+    currentStep.value = 'review'
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      errorMessage.value =
+        error.response?.data?.detail ||
+        'The deck could not be created right now. Please try again with more complete content.'
+    } else {
+      errorMessage.value = 'Something went wrong while saving the deck.'
+    }
+  } finally {
+    isSubmitting.value = false
+    submitStage.value = 'idle'
+  }
+}
+
+async function finishDeck() {
+  if (!canFinishReview.value || reviewDeckId.value === null) {
+    return
+  }
+
+  isFinishingReview.value = true
+  errorMessage.value = ''
+
+  try {
+    await api.post(`/learning-units/${reviewDeckId.value}/review-cards/`, {
+      flashcards: buildReviewPayload(),
+    })
+    localStorage.removeItem(DRAFT_STORAGE_KEY)
+
+    await router.push({
+      name: 'deck',
+      params: { id: reviewDeckId.value.toString() },
+    })
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      errorMessage.value =
+        error.response?.data?.detail ||
+        'The reviewed cards could not be saved right now. Please try again.'
+    } else {
+      errorMessage.value = 'Something went wrong while finishing the deck.'
+    }
+  } finally {
+    isFinishingReview.value = false
+  }
+}
+
+onMounted(() => {
+  if (editingDeckId.value !== null) {
+    void loadExistingDeck(editingDeckId.value)
+    return
+  }
+
+  restoreDraft()
 })
 
 watch([title, rawContent, maxFlashcards], () => {
   persistDraft()
 })
+
+watch(
+  () => editingDeckId.value,
+  (deckId) => {
+    if (deckId !== null) {
+      void loadExistingDeck(deckId)
+      return
+    }
+
+    restoreDraft()
+  },
+)
 </script>
 
 <template>
   <main class="create-page">
     <section class="create-frame">
       <header class="page-bar">
-        <RouterLink class="back-link" to="/">
+        <button v-if="currentStep === 'review'" class="back-link button-reset" type="button" @click="returnToEditing">
           <span aria-hidden="true">←</span>
-          <span>New Deck</span>
+          <span>{{ pageTitle }}</span>
+        </button>
+        <RouterLink v-else class="back-link" to="/">
+          <span aria-hidden="true">←</span>
+          <span>{{ pageTitle }}</span>
         </RouterLink>
       </header>
 
-      <form class="editor-shell" @submit.prevent="createDeck">
+      <form v-if="currentStep === 'editing'" class="editor-shell" @submit.prevent="createDeck">
         <div class="editor-stack">
           <label class="title-field">
             <span class="sr-only">Deck title</span>
@@ -181,9 +375,69 @@ watch([title, rawContent, maxFlashcards], () => {
             </div>
           </div>
 
+          <p v-if="isLoadingExistingDeck" class="editor-note">Loading deck details...</p>
           <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
         </div>
       </form>
+
+      <section v-else class="review-shell">
+        <div class="review-grid">
+          <aside class="source-panel">
+            <p class="review-label">Source</p>
+            <div class="source-copy">
+              {{ rawContent }}
+            </div>
+          </aside>
+
+          <div class="review-column">
+            <div class="review-header">
+              <div class="review-header-copy">
+                <p class="review-label">{{ reviewSummary }}</p>
+                <p class="review-help">Check the generated cards, edit anything unclear, then finish the deck.</p>
+              </div>
+
+              <button class="primary-button finish-button" type="button" :disabled="!canFinishReview" @click="finishDeck">
+                {{ isFinishingReview ? 'Finishing...' : 'Finish Deck →' }}
+              </button>
+            </div>
+
+            <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
+
+            <div class="review-list">
+              <article
+                v-for="(card, index) in reviewCards"
+                :key="card.id"
+                class="review-card"
+                :class="{ discarded: !card.keep }"
+              >
+                <div class="review-card-header">
+                  <span class="score-pill">{{ card.score }}%</span>
+                  <button
+                    class="keep-toggle"
+                    :class="{ active: card.keep }"
+                    type="button"
+                    @click="toggleKeep(card.id)"
+                  >
+                    {{ card.keep ? 'Kept' : 'Discard' }}
+                  </button>
+                </div>
+
+                <label class="review-field">
+                  <span>Question {{ index + 1 }}</span>
+                  <textarea v-model="card.question" rows="2" :disabled="!card.keep" />
+                </label>
+
+                <label class="review-field">
+                  <span>Answer</span>
+                  <textarea v-model="card.answer" rows="3" :disabled="!card.keep" />
+                </label>
+
+                <p v-if="card.content" class="review-source-note">{{ card.content }}</p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
     </section>
   </main>
 </template>
@@ -195,17 +449,10 @@ watch([title, rawContent, maxFlashcards], () => {
 
 .create-frame {
   min-height: calc(100vh - 120px);
-  border: 1px solid var(--color-border);
-  border-radius: 28px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 247, 252, 0.98)),
-    var(--color-surface);
-  box-shadow: var(--color-shadow);
 }
 
 .page-bar {
-  padding: 0.95rem 1.4rem;
-  border-bottom: 1px solid var(--color-border);
+  padding: 0.95rem 0 1rem;
 }
 
 .back-link {
@@ -217,10 +464,16 @@ watch([title, rawContent, maxFlashcards], () => {
   font-weight: 600;
 }
 
+.button-reset {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
 .editor-shell {
   display: grid;
   place-items: center;
-  padding: 2.5rem 1.25rem 3rem;
+  padding: 2.5rem 0 3rem;
 }
 
 .editor-stack {
@@ -356,9 +609,186 @@ watch([title, rawContent, maxFlashcards], () => {
   color: #c24144;
 }
 
+.editor-note {
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+}
+
+.review-shell {
+  padding: 1.75rem 0 2rem;
+}
+
+.review-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.source-panel,
+.review-card {
+  border: 1px solid var(--color-border);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(242, 246, 252, 0.94)),
+    var(--color-surface);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+}
+
+.source-panel {
+  padding: 1.25rem;
+}
+
+.review-label {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.source-copy {
+  max-height: 720px;
+  margin-top: 1rem;
+  overflow: auto;
+  color: var(--color-heading);
+  font-size: 1.05rem;
+  line-height: 1.95;
+  white-space: pre-wrap;
+}
+
+.review-column {
+  display: grid;
+  gap: 1rem;
+}
+
+.review-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.review-header-copy {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.review-help {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.finish-button {
+  min-width: 180px;
+}
+
+.review-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.review-card {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.2rem;
+}
+
+.review-card.discarded {
+  opacity: 0.56;
+}
+
+.review-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.score-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.25rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 10px;
+  background: rgba(34, 197, 94, 0.12);
+  color: #15803d;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.keep-toggle {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.5rem 0.85rem;
+  background: rgba(15, 23, 42, 0.03);
+  color: var(--color-text-muted);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.keep-toggle.active {
+  background: rgba(34, 197, 94, 0.12);
+  color: #15803d;
+  border-color: rgba(34, 197, 94, 0.18);
+}
+
+.review-field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.review-field span {
+  color: var(--color-heading);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.review-field textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 16px;
+  padding: 0.95rem 1rem;
+  background: var(--color-panel);
+  color: var(--color-heading);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.review-field textarea:focus {
+  outline: none;
+  border-color: rgba(47, 93, 230, 0.24);
+  box-shadow: 0 0 0 3px rgba(47, 93, 230, 0.1);
+}
+
+.review-field textarea:disabled {
+  cursor: not-allowed;
+}
+
+.review-source-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.92rem;
+  line-height: 1.7;
+}
+
+@media (min-width: 980px) {
+  .review-grid {
+    grid-template-columns: minmax(280px, 0.42fr) minmax(0, 0.58fr);
+    align-items: start;
+  }
+
+  .source-panel {
+    position: sticky;
+    top: 1rem;
+  }
+}
+
 @media (max-width: 720px) {
   .editor-shell {
-    padding: 1.6rem 1rem 2rem;
+    padding: 1.6rem 0 2rem;
   }
 
   .content-field textarea {
@@ -379,6 +809,18 @@ watch([title, rawContent, maxFlashcards], () => {
   .primary-button {
     width: 100%;
     justify-content: center;
+  }
+
+  .review-shell {
+    padding: 1rem 0;
+  }
+
+  .review-header {
+    align-items: stretch;
+  }
+
+  .finish-button {
+    width: 100%;
   }
 }
 </style>

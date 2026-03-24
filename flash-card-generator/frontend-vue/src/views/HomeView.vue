@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import axios from 'axios'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 import { api, type LearningUnit } from '../services/api'
 
+const router = useRouter()
 const decks = ref<LearningUnit[]>([])
 const isLoading = ref(true)
 const errorMessage = ref('')
 const searchQuery = ref('')
+const openMenuId = ref<number | null>(null)
+const deletingDeckId = ref<number | null>(null)
 
 const filteredDecks = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
@@ -24,31 +28,39 @@ const filteredDecks = computed(() => {
   })
 })
 
-function formatRelativeTime(value: string) {
-  const createdAt = new Date(value)
-  const diffInMinutes = Math.round((createdAt.getTime() - Date.now()) / 60000)
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+function formatCreatedTimeline(value: string) {
+  const createdAt = new Date(value).getTime()
+  const diffInSeconds = Math.max(0, Math.floor((Date.now() - createdAt) / 1000))
 
-  const ranges: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-    ['year', 525600],
-    ['month', 43200],
-    ['week', 10080],
-    ['day', 1440],
-    ['hour', 60],
-    ['minute', 1],
-  ]
-
-  for (const [unit, minutes] of ranges) {
-    if (Math.abs(diffInMinutes) >= minutes || unit === 'minute') {
-      return formatter.format(Math.round(diffInMinutes / minutes), unit)
-    }
+  if (diffInSeconds < 60) {
+    return 'Just now'
   }
 
-  return 'just now'
+  if (diffInSeconds < 3600) {
+    return `${Math.floor(diffInSeconds / 60)}m ago`
+  }
+
+  if (diffInSeconds < 86400) {
+    return `${Math.floor(diffInSeconds / 3600)}h ago`
+  }
+
+  if (diffInSeconds < 604800) {
+    return `${Math.floor(diffInSeconds / 86400)}d ago`
+  }
+
+  if (diffInSeconds < 2592000) {
+    return `${Math.floor(diffInSeconds / 604800)}w ago`
+  }
+
+  if (diffInSeconds < 31536000) {
+    return `${Math.floor(diffInSeconds / 2592000)}mo ago`
+  }
+
+  return `${Math.floor(diffInSeconds / 31536000)}y ago`
 }
 
 function getDeckPattern(deck: LearningUnit) {
-  const seed = deck.id + deck.flashcards.length
+  const seed = deck.id + deck.generated_flashcards_count
   return Array.from({ length: 12 }, (_, index) => {
     const value = (seed * (index + 3) + index * 7) % 4
     return value
@@ -74,8 +86,67 @@ async function loadDecks() {
   }
 }
 
+function toggleDeckMenu(deckId: number) {
+  openMenuId.value = openMenuId.value === deckId ? null : deckId
+}
+
+function closeDeckMenu() {
+  openMenuId.value = null
+}
+
+function goToDeck(deckId: number) {
+  closeDeckMenu()
+  void router.push({
+    name: 'deck',
+    params: { id: deckId.toString() },
+  })
+}
+
+function editDeck(deckId: number) {
+  closeDeckMenu()
+  void router.push({
+    name: 'create',
+    query: { deckId: deckId.toString() },
+  })
+}
+
+async function deleteDeck(deck: LearningUnit) {
+  const confirmed = window.confirm(`Delete "${deck.title}"? This will remove the deck and its cards.`)
+
+  if (!confirmed) {
+    return
+  }
+
+  deletingDeckId.value = deck.id
+  closeDeckMenu()
+  errorMessage.value = ''
+
+  try {
+    await api.delete(`/learning-units/${deck.id}/`)
+    decks.value = decks.value.filter((item) => item.id !== deck.id)
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      errorMessage.value =
+        error.response?.data?.detail || 'This deck could not be deleted right now.'
+    } else {
+      errorMessage.value = 'Something went wrong while deleting the deck.'
+    }
+  } finally {
+    deletingDeckId.value = null
+  }
+}
+
+function handleDocumentClick() {
+  closeDeckMenu()
+}
+
 onMounted(() => {
+  window.addEventListener('click', handleDocumentClick)
   void loadDecks()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('click', handleDocumentClick)
 })
 </script>
 
@@ -108,47 +179,83 @@ onMounted(() => {
       </div>
 
       <div v-else-if="filteredDecks.length" class="deck-grid">
-        <RouterLink
+        <article
           v-for="deck in filteredDecks"
           :key="deck.id"
           class="deck-card"
-          :to="{ name: 'deck', params: { id: deck.id.toString() } }"
         >
-          <h2>{{ deck.title }}</h2>
+          <div class="deck-card-top">
+            <button class="deck-main" type="button" @click="goToDeck(deck.id)">
+              <h2>{{ deck.title }}</h2>
 
-          <div class="deck-meta">
-            <span class="meta-chip">
-              <svg viewBox="0 0 24 24" role="presentation">
-                <path
-                  d="M6.5 7.5 12 4l5.5 3.5L12 11ZM6.5 11.5 12 15l5.5-3.5M6.5 15.5 12 19l5.5-3.5"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.6"
+              <div class="deck-meta">
+                <span class="meta-chip">
+                  <svg viewBox="0 0 24 24" role="presentation">
+                    <path
+                      d="M6.5 7.5 12 4l5.5 3.5L12 11ZM6.5 11.5 12 15l5.5-3.5M6.5 15.5 12 19l5.5-3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="1.6"
+                    />
+                  </svg>
+                  <span>{{ deck.generated_flashcards_count }} cards</span>
+                </span>
+
+                <span class="meta-chip">
+                  <svg viewBox="0 0 24 24" role="presentation">
+                    <path
+                      d="M7 4.75V6.5M17 4.75V6.5M5 9h14M6.75 6.5h10.5A1.75 1.75 0 0 1 19 8.25v9A1.75 1.75 0 0 1 17.25 19H6.75A1.75 1.75 0 0 1 5 17.25v-9A1.75 1.75 0 0 1 6.75 6.5Z"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="1.6"
+                    />
+                  </svg>
+                  <span>{{ formatCreatedTimeline(deck.created_at) }}</span>
+                </span>
+              </div>
+
+              <div class="deck-pattern" aria-hidden="true">
+                <span
+                  v-for="(value, index) in getDeckPattern(deck)"
+                  :key="`${deck.id}-${index}`"
+                  class="pattern-node"
+                  :class="`size-${value}`"
                 />
-              </svg>
-              <span>{{ deck.flashcards.length }} cards</span>
-            </span>
+              </div>
+            </button>
 
-            <span class="meta-chip">
-              <svg viewBox="0 0 24 24" role="presentation">
-                <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6" />
-                <path d="M12 8v4l2.5 1.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6" />
-              </svg>
-              <span>{{ formatRelativeTime(deck.created_at) }}</span>
-            </span>
-          </div>
+            <div class="deck-menu-shell" @click.stop>
+              <button
+                class="menu-button"
+                type="button"
+                aria-label="Deck actions"
+                :aria-expanded="openMenuId === deck.id"
+                @click="toggleDeckMenu(deck.id)"
+              >
+                <span />
+                <span />
+                <span />
+              </button>
 
-          <div class="deck-pattern" aria-hidden="true">
-            <span
-              v-for="(value, index) in getDeckPattern(deck)"
-              :key="`${deck.id}-${index}`"
-              class="pattern-node"
-              :class="`size-${value}`"
-            />
+              <div v-if="openMenuId === deck.id" class="deck-menu">
+                <button class="menu-item" type="button" @click="goToDeck(deck.id)">Study</button>
+                <button class="menu-item" type="button" @click="editDeck(deck.id)">Edit</button>
+                <button
+                  class="menu-item danger"
+                  type="button"
+                  :disabled="deletingDeckId === deck.id"
+                  @click="deleteDeck(deck)"
+                >
+                  {{ deletingDeckId === deck.id ? 'Deleting...' : 'Delete' }}
+                </button>
+              </div>
+            </div>
           </div>
-        </RouterLink>
+        </article>
 
         <RouterLink class="create-card" to="/create">
           <span class="create-plus">+</span>
@@ -178,13 +285,7 @@ onMounted(() => {
 
 .dashboard-frame {
   min-height: calc(100vh - 180px);
-  padding: 1.6rem;
-  border: 1px solid var(--color-border);
-  border-radius: 28px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(245, 247, 252, 0.98)),
-    var(--color-surface);
-  box-shadow: var(--color-shadow);
+  padding: 1.6rem 0 0;
 }
 
 .search-shell {
@@ -243,13 +344,104 @@ onMounted(() => {
 
 .deck-card {
   display: grid;
+  position: relative;
+}
+
+.deck-card-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 1rem;
+  align-items: start;
+}
+
+.deck-main {
+  display: grid;
+  gap: 1rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
 }
 
 .deck-card h2 {
   font-size: 1.55rem;
   font-weight: 700;
   color: var(--color-heading);
+}
+
+.deck-menu-shell {
+  position: relative;
+}
+
+.menu-button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.18rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.menu-button span {
+  width: 0.2rem;
+  height: 0.2rem;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.deck-menu {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  right: 0;
+  z-index: 2;
+  min-width: 140px;
+  display: grid;
+  padding: 0.4rem;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(244, 247, 252, 0.98)),
+    var(--color-surface);
+  box-shadow: 0 18px 32px rgba(15, 23, 42, 0.12);
+}
+
+.menu-item {
+  padding: 0.75rem 0.85rem;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-heading);
+  text-align: left;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  outline: none;
+  background: rgba(59, 108, 255, 0.08);
+}
+
+.menu-item:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.menu-item.danger {
+  color: #c24144;
+}
+
+.menu-item.danger:hover,
+.menu-item.danger:focus-visible {
+  background: rgba(194, 65, 68, 0.08);
 }
 
 .deck-meta {
@@ -404,7 +596,7 @@ onMounted(() => {
 
 @media (max-width: 720px) {
   .dashboard-frame {
-    padding: 1rem;
+    padding: 1rem 0 0;
   }
 
   .deck-card h2 {

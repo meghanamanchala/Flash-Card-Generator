@@ -2,6 +2,8 @@ import axios from 'axios'
 
 export type Flashcard = {
   id: number
+  question: string
+  answer: string
   content: string
   order: number
   created_at: string
@@ -12,6 +14,8 @@ export type LearningUnit = {
   title: string
   raw_content: string
   max_flashcards: number
+  last_studied_at: string | null
+  generated_flashcards_count: number
   created_at: string
   updated_at: string
   flashcards: Flashcard[]
@@ -22,6 +26,12 @@ export type GenerateResponse = {
   title: string
   max_flashcards: number
   flashcards: Flashcard[]
+}
+
+export type ReviewFlashcardInput = {
+  question: string
+  answer: string
+  content: string
 }
 
 export type AuthUser = {

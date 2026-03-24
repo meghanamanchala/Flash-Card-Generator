@@ -21,3 +21,6 @@ class BearerTokenAuthentication(authentication.BaseAuthentication):
             raise exceptions.AuthenticationFailed('Invalid authentication token.') from exc
 
         return (token.user, token)
+
+    def authenticate_header(self, request):
+        return self.keyword

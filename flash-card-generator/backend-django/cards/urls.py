@@ -7,8 +7,10 @@ from .views import (
     LearningUnitDetailView,
     LearningUnitListCreateView,
     LoginView,
+    MarkLearningUnitStudiedView,
     LogoutView,
     RegisterView,
+    ReviewFlashCardsView,
 )
 
 urlpatterns = [
@@ -27,5 +29,15 @@ urlpatterns = [
         'learning-units/<int:pk>/cards/',
         FlashCardListView.as_view(),
         name='learning-unit-cards',
+    ),
+    path(
+        'learning-units/<int:pk>/mark-studied/',
+        MarkLearningUnitStudiedView.as_view(),
+        name='learning-unit-mark-studied',
+    ),
+    path(
+        'learning-units/<int:pk>/review-cards/',
+        ReviewFlashCardsView.as_view(),
+        name='review-flashcards',
     ),
 ]
