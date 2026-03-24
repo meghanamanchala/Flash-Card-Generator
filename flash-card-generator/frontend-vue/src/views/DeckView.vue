@@ -14,6 +14,8 @@ const activeCardIndex = ref(0)
 const isLoading = ref(true)
 const errorMessage = ref('')
 const isAnswerVisible = ref(false)
+const isSessionComplete = ref(false)
+const skippedCardsCount = ref(0)
 const ratingCounts = ref<Record<StudyRating, number>>({
   again: 0,
   hard: 0,
@@ -26,13 +28,24 @@ const activeCard = computed(() => {
 })
 
 const deckHasCards = computed(() => Boolean(deck.value?.flashcards.length))
+const reviewedCardsCount = computed(() => {
+  return Object.values(ratingCounts.value).reduce((total, count) => total + count, 0)
+})
+const totalCards = computed(() => deck.value?.flashcards.length ?? 0)
+const isLastCard = computed(() => {
+  return totalCards.value > 0 && activeCardIndex.value === totalCards.value - 1
+})
 
 const cardProgress = computed(() => {
-  if (!deck.value?.flashcards.length) {
+  if (isSessionComplete.value) {
+    return 'Complete'
+  }
+
+  if (!totalCards.value) {
     return '0 / 0'
   }
 
-  return `${activeCardIndex.value + 1} / ${deck.value.flashcards.length}`
+  return `${activeCardIndex.value + 1} / ${totalCards.value}`
 })
 
 const sessionSummary = computed(() => [
@@ -41,10 +54,43 @@ const sessionSummary = computed(() => [
   { label: 'Good', value: ratingCounts.value.good, tone: 'good' },
   { label: 'Easy', value: ratingCounts.value.easy, tone: 'easy' },
 ])
+const averageDifficulty = computed(() => {
+  if (!reviewedCardsCount.value) {
+    return '—'
+  }
+
+  const weightedTotal =
+    ratingCounts.value.again * 1 +
+    ratingCounts.value.hard * 2 +
+    ratingCounts.value.good * 3 +
+    ratingCounts.value.easy * 4
+
+  return (weightedTotal / reviewedCardsCount.value).toFixed(1)
+})
+const completionMessage = computed(() => {
+  if (!deck.value) {
+    return ''
+  }
+
+  if (!reviewedCardsCount.value && skippedCardsCount.value === totalCards.value) {
+    return `You skipped every card in ${deck.value.title}.`
+  }
+
+  return reviewedCardsCount.value === totalCards.value
+    ? `You reviewed every card in ${deck.value.title}.`
+    : `You completed a study pass for ${deck.value.title}.`
+})
 
 function deriveCardSides(card: Flashcard | null) {
   if (!card) {
     return { question: '', answer: '' }
+  }
+
+  if (card.question.trim() && card.answer.trim()) {
+    return {
+      question: card.question.trim(),
+      answer: card.answer.trim(),
+    }
   }
 
   const normalized = card.content.replace(/\s+/g, ' ').trim()
@@ -98,6 +144,24 @@ function resetCardState() {
   isAnswerVisible.value = false
 }
 
+function resetSession() {
+  activeCardIndex.value = 0
+  isSessionComplete.value = false
+  skippedCardsCount.value = 0
+  resetCardState()
+  ratingCounts.value = {
+    again: 0,
+    hard: 0,
+    good: 0,
+    easy: 0,
+  }
+}
+
+function completeSession() {
+  isSessionComplete.value = true
+  resetCardState()
+}
+
 async function loadDeck() {
   isLoading.value = true
   errorMessage.value = ''
@@ -105,14 +169,8 @@ async function loadDeck() {
   try {
     const { data } = await api.get<LearningUnit>(`/learning-units/${route.params.id}/`)
     deck.value = data
-    activeCardIndex.value = 0
-    resetCardState()
-    ratingCounts.value = {
-      again: 0,
-      hard: 0,
-      good: 0,
-      easy: 0,
-    }
+    resetSession()
+    await markDeckStudied()
   } catch (error) {
     if (axios.isAxiosError(error)) {
       errorMessage.value = error.response?.data?.detail || 'This saved deck could not be loaded.'
@@ -124,23 +182,41 @@ async function loadDeck() {
   }
 }
 
-function showPreviousCard() {
-  if (!deck.value?.flashcards.length) {
+async function markDeckStudied() {
+  if (!deck.value) {
     return
   }
 
-  activeCardIndex.value =
-    activeCardIndex.value === 0 ? deck.value.flashcards.length - 1 : activeCardIndex.value - 1
+  try {
+    const { data } = await api.post<LearningUnit>(`/learning-units/${deck.value.id}/mark-studied/`)
+    deck.value = data
+  } catch {
+    // Study mode should still work even if the dashboard status could not be updated.
+  }
+}
+
+function showPreviousCard() {
+  if (!deck.value?.flashcards.length || isSessionComplete.value) {
+    return
+  }
+
+  activeCardIndex.value = Math.max(0, activeCardIndex.value - 1)
   resetCardState()
 }
 
 function showNextCard() {
-  if (!deck.value?.flashcards.length) {
+  if (!deck.value?.flashcards.length || isSessionComplete.value) {
     return
   }
 
-  activeCardIndex.value =
-    activeCardIndex.value === deck.value.flashcards.length - 1 ? 0 : activeCardIndex.value + 1
+  skippedCardsCount.value += 1
+
+  if (isLastCard.value) {
+    completeSession()
+    return
+  }
+
+  activeCardIndex.value = Math.min(deck.value.flashcards.length - 1, activeCardIndex.value + 1)
   resetCardState()
 }
 
@@ -157,10 +233,21 @@ function rateCard(rating: StudyRating) {
     ...ratingCounts.value,
     [rating]: ratingCounts.value[rating] + 1,
   }
-  showNextCard()
+
+  if (isLastCard.value) {
+    completeSession()
+    return
+  }
+
+  activeCardIndex.value += 1
+  resetCardState()
 }
 
 function handleKeydown(event: KeyboardEvent) {
+  if (isSessionComplete.value) {
+    return
+  }
+
   if (event.key === 'ArrowLeft') {
     showPreviousCard()
   }
@@ -224,7 +311,7 @@ onBeforeUnmount(() => {
 
       <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
 
-      <section v-if="deck && !isLoading && deckHasCards" class="study-shell">
+      <section v-if="deck && !isLoading && deckHasCards && !isSessionComplete" class="study-shell">
         <article class="study-card" role="button" tabindex="0" @click="revealAnswer">
           <span class="card-label">{{ activeCardLabel }}</span>
           <h1>{{ activeCardText }}</h1>
@@ -244,10 +331,43 @@ onBeforeUnmount(() => {
           <button class="ghost-button" type="button" @click="showNextCard">Skip</button>
         </div>
 
+        <div v-if="isAnswerVisible" class="session-row">
+          <span v-for="item in sessionSummary" :key="item.label" class="summary-chip" :class="item.tone">
+            {{ item.label }} {{ item.value }}
+          </span>
+        </div>
+      </section>
+
+      <section v-else-if="deck && !isLoading && deckHasCards && isSessionComplete" class="completion-shell">
+        <div class="completion-copy">
+          <h2>Session Complete</h2>
+          <p>{{ completionMessage }}</p>
+        </div>
+
+        <div class="completion-grid">
+          <article class="completion-stat">
+            <strong>{{ reviewedCardsCount }}</strong>
+            <span>Cards reviewed</span>
+          </article>
+          <article class="completion-stat">
+            <strong>{{ skippedCardsCount }}</strong>
+            <span>Cards skipped</span>
+          </article>
+          <article class="completion-stat">
+            <strong>{{ averageDifficulty }}</strong>
+            <span>Avg. difficulty</span>
+          </article>
+        </div>
+
         <div class="session-row">
           <span v-for="item in sessionSummary" :key="item.label" class="summary-chip" :class="item.tone">
             {{ item.label }} {{ item.value }}
           </span>
+        </div>
+
+        <div class="completion-actions">
+          <button class="ghost-button" type="button" @click="resetSession">Study Again</button>
+          <RouterLink class="primary-button link-button" to="/">Back to Library</RouterLink>
         </div>
       </section>
 
@@ -278,19 +398,13 @@ onBeforeUnmount(() => {
 
 .study-frame {
   min-height: calc(100vh - 120px);
-  border: 1px solid var(--color-border);
-  border-radius: 28px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 247, 252, 0.98)),
-    var(--color-surface);
-  box-shadow: var(--color-shadow);
 }
 
 .study-bar {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.95rem 1.4rem;
+  padding: 0.95rem 0 1rem;
 }
 
 .back-link {
@@ -310,50 +424,52 @@ onBeforeUnmount(() => {
 }
 
 .study-shell,
+.completion-shell,
 .empty-state {
   min-height: calc(100vh - 220px);
   display: grid;
   place-items: center;
-  padding: 1.5rem;
+  padding: 1.5rem 0;
 }
 
-.study-shell {
+.study-shell,
+.completion-shell {
   gap: 1.2rem;
 }
 
 .study-card {
-  width: min(100%, 720px);
-  min-height: 250px;
+  width: min(100%, 760px);
+  min-height: 180px;
   display: grid;
   align-content: center;
-  gap: 1.5rem;
-  padding: 2rem;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 24px;
-  background:
-    linear-gradient(180deg, #ffffff, #f6f8fd),
-    #ffffff;
-  box-shadow: var(--color-shadow-strong);
+  gap: 1rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   cursor: pointer;
 }
 
 .card-label {
   color: var(--color-text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.22em;
-  font-size: 0.82rem;
+  letter-spacing: 0.18em;
+  font-size: 0.72rem;
   font-weight: 600;
 }
 
 .study-card h1 {
-  font-size: clamp(1.9rem, 3vw, 2.6rem);
-  line-height: 1.35;
-  font-weight: 500;
+  max-width: 30ch;
+  font-size: clamp(1.05rem, 1.35vw, 1.45rem);
+  line-height: 1.55;
+  font-weight: 400;
+  letter-spacing: -0.01em;
 }
 
 .card-hint {
   color: var(--color-text-muted);
-  font-size: 1rem;
+  font-size: 0.76rem;
 }
 
 .study-actions,
@@ -425,6 +541,57 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
+.completion-copy {
+  display: grid;
+  gap: 0.45rem;
+  text-align: center;
+}
+
+.completion-copy h2 {
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  font-weight: 800;
+}
+
+.completion-copy p {
+  color: var(--color-text-muted);
+}
+
+.completion-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.completion-stat {
+  min-width: 150px;
+  padding: 1.35rem 1.15rem;
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(242, 246, 252, 0.94)),
+    var(--color-surface);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+  text-align: center;
+}
+
+.completion-stat strong {
+  display: block;
+  color: var(--color-heading);
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.completion-stat span {
+  color: var(--color-text-muted);
+}
+
+.completion-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
 .empty-state {
   gap: 0.8rem;
   text-align: center;
@@ -456,12 +623,18 @@ onBeforeUnmount(() => {
 
 @media (max-width: 720px) {
   .study-card {
-    min-height: 220px;
-    padding: 1.5rem;
+    min-height: 160px;
   }
 
   .study-card h1 {
-    font-size: 1.6rem;
+    font-size: 1rem;
+    max-width: none;
+  }
+}
+
+@media (min-width: 640px) {
+  .completion-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

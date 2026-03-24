@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Source+Serif+4:wght@600;700&display=swap');
 
 :root {
-  --color-background: #edf0f7;
+  --color-background: #ffffff;
   --color-surface: #ffffff;
   --color-panel: #f2f5fb;
   --color-panel-strong: #e8edf7;
@@ -41,10 +41,7 @@ html {
 body {
   min-height: 100vh;
   color: var(--color-text);
-  background:
-    radial-gradient(circle at top left, rgba(168, 189, 255, 0.34), transparent 26%),
-    radial-gradient(circle at top right, rgba(197, 211, 247, 0.5), transparent 22%),
-    linear-gradient(180deg, #f4f6fb 0%, #e9edf6 100%);
+  background: var(--color-background);
   line-height: 1.6;
   font-family: 'Inter', 'Segoe UI', sans-serif;
   font-size: 16px;

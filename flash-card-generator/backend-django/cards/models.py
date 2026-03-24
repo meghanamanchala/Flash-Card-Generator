@@ -15,6 +15,7 @@ class LearningUnit(models.Model):
     title = models.CharField(max_length=255)
     raw_content = models.TextField()
     max_flashcards = models.PositiveIntegerField(default=10)
+    last_studied_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -31,6 +32,8 @@ class FlashCard(models.Model):
         on_delete=models.CASCADE,
         related_name='flashcards',
     )
+    question = models.TextField(blank=True, default='')
+    answer = models.TextField(blank=True, default='')
     content = models.TextField()
     order = models.PositiveIntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
