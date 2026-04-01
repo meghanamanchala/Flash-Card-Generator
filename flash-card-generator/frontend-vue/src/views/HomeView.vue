@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import axios from 'axios'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { api, type LearningUnit } from '../services/api'
@@ -12,6 +12,9 @@ const errorMessage = ref('')
 const searchQuery = ref('')
 const openMenuId = ref<number | null>(null)
 const deletingDeckId = ref<number | null>(null)
+const pendingDeleteDeck = ref<LearningUnit | null>(null)
+const deletePopupRef = ref<HTMLElement | null>(null)
+const previouslyFocusedElement = ref<HTMLElement | null>(null)
 
 const filteredDecks = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
@@ -110,20 +113,36 @@ function editDeck(deckId: number) {
   })
 }
 
-async function deleteDeck(deck: LearningUnit) {
-  const confirmed = window.confirm(`Delete "${deck.title}"? This will remove the deck and its cards.`)
+function openDeletePopup(deck: LearningUnit) {
+  const activeElement = document.activeElement
+  previouslyFocusedElement.value = activeElement instanceof HTMLElement ? activeElement : null
+  pendingDeleteDeck.value = deck
+  closeDeckMenu()
+}
 
-  if (!confirmed) {
+function closeDeletePopup() {
+  if (deletingDeckId.value !== null) {
+    return
+  }
+
+  pendingDeleteDeck.value = null
+  previouslyFocusedElement.value?.focus()
+}
+
+async function confirmDeleteDeck() {
+  const deck = pendingDeleteDeck.value
+
+  if (!deck) {
     return
   }
 
   deletingDeckId.value = deck.id
-  closeDeckMenu()
   errorMessage.value = ''
 
   try {
     await api.delete(`/learning-units/${deck.id}/`)
     decks.value = decks.value.filter((item) => item.id !== deck.id)
+    pendingDeleteDeck.value = null
   } catch (error) {
     if (axios.isAxiosError(error)) {
       errorMessage.value =
@@ -136,17 +155,92 @@ async function deleteDeck(deck: LearningUnit) {
   }
 }
 
+function getFocusableElements(container: HTMLElement) {
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => !element.hasAttribute('disabled') && element.getAttribute('aria-hidden') !== 'true')
+}
+
+function focusDeletePopup() {
+  void nextTick(() => {
+    const popup = deletePopupRef.value
+
+    if (!popup) {
+      return
+    }
+
+    const focusableElements = getFocusableElements(popup)
+    const firstFocusable = focusableElements[0]
+    ;(firstFocusable || popup).focus()
+  })
+}
+
+function handleDeletePopupKeydown(event: KeyboardEvent) {
+  if (!pendingDeleteDeck.value) {
+    return
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeDeletePopup()
+    return
+  }
+
+  if (event.key !== 'Tab') {
+    return
+  }
+
+  const popup = deletePopupRef.value
+
+  if (!popup) {
+    return
+  }
+
+  const focusableElements = getFocusableElements(popup)
+
+  if (!focusableElements.length) {
+    event.preventDefault()
+    popup.focus()
+    return
+  }
+
+  const firstElement = focusableElements[0]
+  const lastElement = focusableElements[focusableElements.length - 1]
+  const currentElement = document.activeElement
+
+  if (event.shiftKey && currentElement === firstElement) {
+    event.preventDefault()
+    lastElement.focus()
+    return
+  }
+
+  if (!event.shiftKey && currentElement === lastElement) {
+    event.preventDefault()
+    firstElement.focus()
+  }
+}
+
 function handleDocumentClick() {
   closeDeckMenu()
 }
 
 onMounted(() => {
   window.addEventListener('click', handleDocumentClick)
+  window.addEventListener('keydown', handleDeletePopupKeydown)
   void loadDecks()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('click', handleDocumentClick)
+  window.removeEventListener('keydown', handleDeletePopupKeydown)
+})
+
+watch(pendingDeleteDeck, (deck) => {
+  if (deck) {
+    focusDeletePopup()
+  }
 })
 </script>
 
@@ -248,7 +342,7 @@ onBeforeUnmount(() => {
                   class="menu-item danger"
                   type="button"
                   :disabled="deletingDeckId === deck.id"
-                  @click="deleteDeck(deck)"
+                  @click="openDeletePopup(deck)"
                 >
                   {{ deletingDeckId === deck.id ? 'Deleting...' : 'Delete' }}
                 </button>
@@ -273,6 +367,48 @@ onBeforeUnmount(() => {
           }}
         </p>
         <RouterLink class="empty-link" to="/create">New Deck</RouterLink>
+      </div>
+
+      <div
+        v-if="pendingDeleteDeck"
+        class="delete-popup-backdrop"
+        role="presentation"
+        @click="closeDeletePopup"
+      >
+        <section
+          ref="deletePopupRef"
+          class="delete-popup"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-popup-title"
+          tabindex="-1"
+          @click.stop
+        >
+          <h3 id="delete-popup-title">Delete deck?</h3>
+          <p>
+            This will permanently remove
+            <strong>"{{ pendingDeleteDeck.title }}"</strong>
+            and all its cards.
+          </p>
+          <div class="delete-popup-actions">
+            <button
+              class="popup-btn secondary"
+              type="button"
+              :disabled="deletingDeckId !== null"
+              @click="closeDeletePopup"
+            >
+              Cancel
+            </button>
+            <button
+              class="popup-btn danger"
+              type="button"
+              :disabled="deletingDeckId !== null"
+              @click="confirmDeleteDeck"
+            >
+              {{ deletingDeckId !== null ? 'Deleting...' : 'Delete' }}
+            </button>
+          </div>
+        </section>
       </div>
     </section>
   </main>
@@ -576,6 +712,69 @@ onBeforeUnmount(() => {
   border-radius: 16px;
   background: #fff1f0;
   color: #c24144;
+}
+
+.delete-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.44);
+}
+
+.delete-popup {
+  width: min(100%, 420px);
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.3rem;
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 248, 253, 0.95)),
+    var(--color-surface);
+  box-shadow: 0 22px 40px rgba(15, 23, 42, 0.24);
+}
+
+.delete-popup h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.delete-popup p {
+  color: var(--color-text-muted);
+}
+
+.delete-popup-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.popup-btn {
+  padding: 0.7rem 1rem;
+  border-radius: 12px;
+  border: 0;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.popup-btn.secondary {
+  background: rgba(15, 23, 42, 0.08);
+  color: var(--color-heading);
+}
+
+.popup-btn.danger {
+  background: linear-gradient(180deg, #e2555d, #cf3f49);
+  color: #ffffff;
+}
+
+.popup-btn:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
 }
 
 @keyframes shimmer {
