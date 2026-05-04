@@ -40,6 +40,8 @@ export type AuthUser = {
 }
 
 export const MAX_FLASHCARDS_LIMIT = 20
+export const MIN_CONTENT_LENGTH = 20
+export const MAX_CONTENT_LENGTH = 50000
 export const AUTH_TOKEN_STORAGE_KEY = 'flash-card-generator-token'
 
 export const api = axios.create({

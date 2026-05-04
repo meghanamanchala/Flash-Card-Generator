@@ -6,6 +6,8 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   api,
   MAX_FLASHCARDS_LIMIT,
+  MIN_CONTENT_LENGTH,
+  MAX_CONTENT_LENGTH,
   type Flashcard,
   type GenerateResponse,
   type LearningUnit,
@@ -40,10 +42,33 @@ const wordCount = computed(() => {
   return content ? content.split(/\s+/).length : 0
 })
 
+const titleError = computed(() => {
+  const trimmedTitle = title.value.trim()
+  if (trimmedTitle.length === 0) {
+    return 'Title is required.'
+  }
+  if (trimmedTitle.length > 255) {
+    return 'Title cannot exceed 255 characters.'
+  }
+  return ''
+})
+
+const contentError = computed(() => {
+  const trimmedContent = rawContent.value.trim()
+  if (trimmedContent.length < MIN_CONTENT_LENGTH) {
+    return `Content must be at least ${MIN_CONTENT_LENGTH} characters (${trimmedContent.length}/${MIN_CONTENT_LENGTH}).`
+  }
+  if (trimmedContent.length > MAX_CONTENT_LENGTH) {
+    return `Content cannot exceed ${MAX_CONTENT_LENGTH.toLocaleString()} characters (${trimmedContent.length.toLocaleString()}/${MAX_CONTENT_LENGTH.toLocaleString()}).`
+  }
+  return ''
+})
+
 const canSubmit = computed(() => {
   return (
     title.value.trim().length > 0 &&
-    rawContent.value.trim().length >= 20 &&
+    rawContent.value.trim().length >= MIN_CONTENT_LENGTH &&
+    rawContent.value.trim().length <= MAX_CONTENT_LENGTH &&
     !isSubmitting.value &&
     !isLoadingExistingDeck.value
   )
@@ -250,9 +275,32 @@ async function createDeck() {
     currentStep.value = 'review'
   } catch (error) {
     if (axios.isAxiosError(error)) {
-      errorMessage.value =
-        error.response?.data?.detail ||
-        'The deck could not be created right now. Please try again with more complete content.'
+      const errorData = error.response?.data
+      
+      if (typeof errorData === 'object' && errorData !== null) {
+        if ('title' in errorData) {
+          errorMessage.value = Array.isArray(errorData.title) 
+            ? errorData.title[0] 
+            : errorData.title
+        } else if ('raw_content' in errorData) {
+          errorMessage.value = Array.isArray(errorData.raw_content) 
+            ? errorData.raw_content[0] 
+            : errorData.raw_content
+        } else if ('detail' in errorData) {
+          errorMessage.value = errorData.detail as string
+        } else if ('non_field_errors' in errorData) {
+          const nonFieldErrors = errorData.non_field_errors
+          errorMessage.value = Array.isArray(nonFieldErrors) 
+            ? nonFieldErrors[0] 
+            : String(nonFieldErrors)
+        } else {
+          errorMessage.value = 'The deck could not be created. Please check your input and try again.'
+        }
+      } else {
+        errorMessage.value = 
+          error.response?.data?.detail ||
+          'The deck could not be created right now. Please try again with more complete content.'
+      }
     } else {
       errorMessage.value = 'Something went wrong while saving the deck.'
     }
@@ -339,6 +387,7 @@ watch(
             <span class="sr-only">Deck title</span>
             <input v-model="title" type="text" maxlength="255" placeholder="Deck title" />
           </label>
+          <p v-if="titleError" class="field-error">{{ titleError }}</p>
 
           <label class="content-field">
             <span class="sr-only">Learning content</span>
@@ -348,6 +397,7 @@ watch(
               placeholder="Paste your learning content here — articles, notes, textbook excerpts..."
             />
           </label>
+          <p v-if="contentError" class="field-error">{{ contentError }}</p>
 
           <div class="controls-row">
             <div class="slider-panel">
