@@ -6,6 +6,8 @@ from .models import AuthToken, FlashCard, LearningUnit
 
 
 MAX_FLASHCARDS_LIMIT = 20
+MIN_CONTENT_LENGTH = 20
+MAX_CONTENT_LENGTH = 50000
 User = get_user_model()
 
 
@@ -56,6 +58,29 @@ class LearningUnitSerializer(serializers.ModelSerializer):
         if annotated_count is not None:
             return annotated_count
         return obj.flashcards.count()
+
+    def validate_title(self, value):
+        normalized_value = value.strip()
+        if not normalized_value:
+            raise serializers.ValidationError('Title cannot be blank.')
+        if len(normalized_value) > 255:
+            raise serializers.ValidationError('Title cannot exceed 255 characters.')
+        return normalized_value
+
+    def validate_raw_content(self, value):
+        normalized_content = value.strip()
+        content_length = len(normalized_content)
+        
+        if content_length < MIN_CONTENT_LENGTH:
+            raise serializers.ValidationError(
+                f'Content must be at least {MIN_CONTENT_LENGTH} characters long.'
+            )
+        if content_length > MAX_CONTENT_LENGTH:
+            raise serializers.ValidationError(
+                f'Content cannot exceed {MAX_CONTENT_LENGTH} characters. '
+                f'Current length: {content_length}.'
+            )
+        return normalized_content
 
     def validate_max_flashcards(self, value):
         if value < 1 or value > MAX_FLASHCARDS_LIMIT:
